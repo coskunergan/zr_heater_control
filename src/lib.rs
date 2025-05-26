@@ -25,13 +25,14 @@ use adc_io::Adc;
 use dac_io::Dac;
 use display_io::Display;
 use sogi_pll::sogi_pll::{
-    fast_sin, q15_to_float, spll_update, SogiPllState, N_SAMPLE, PHASE_OFFSET, Q15_SCALE,
+    fast_sin, pi_transfer, q15_to_float, spll_update, SogiPllState, N_SAMPLE, PHASE_OFFSET,
+    Q15_SCALE,
 };
 
 mod adc_io;
 mod dac_io;
 mod display_io;
-pub mod sogi_pll;
+mod sogi_pll;
 mod usage;
 
 static SOGI_STATE: StaticCell<Mutex<SogiPllState>> = StaticCell::new();
@@ -87,6 +88,16 @@ async fn display_task(_spawner: Spawner) {
 
     display.set_backlight(1);
 
+    let mut my_pid = sogi_pll::sogi_pll::PidState {
+        i_sum: 0,
+        sat_err: 0,
+        kp: 75 * 3276, // 7.5
+        ki: 15 * 327, // 0.15
+        kc: 10 * 327, // 0.1
+        i_min: 18 * 32768,
+        i_max: 45 * 32768,
+    };
+
     loop {
         critical_section::with(|cs| {
             let state_ref = SOGI_STATE_REF.borrow(cs).get().unwrap();
@@ -127,6 +138,8 @@ async fn display_task(_spawner: Spawner) {
             );
 
         let _ = Timer::after(Duration::from_millis(100)).await;
+
+        let mut res = pi_transfer(0, &mut my_pid);
     }
 }
 
