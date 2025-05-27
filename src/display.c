@@ -10,7 +10,7 @@
 
 LOG_MODULE_REGISTER(auxdisplay, LOG_LEVEL_DBG);
 
-static const struct device *const display_dev = DEVICE_DT_GET(DT_NODELABEL(auxdisplay_0));
+static const struct device *const display_dev = DEVICE_DT_GET_OR_NULL(DT_NODELABEL(auxdisplay_0));
 
 int display_init()
 {

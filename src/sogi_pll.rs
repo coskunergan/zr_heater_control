@@ -119,7 +119,7 @@ pub mod sogi_pll {
                 duration_ns: 0,
             }
         }
-
+        #[allow(dead_code)]
         pub fn reset(&mut self) {
             self.pid.i_sum = 0;
             self.pid.sat_err = 0;

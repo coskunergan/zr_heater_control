@@ -16,7 +16,7 @@
 #define DAC_CHANNEL_ID DT_PROP(DT_PATH(zephyr_user), dac_channel_id)
 #define DAC_RESOLUTION DT_PROP(DT_PATH(zephyr_user), dac_resolution)
 
-static const struct device *const dac_dev = DEVICE_DT_GET(DAC_NODE);
+static const struct device *const dac_dev = DEVICE_DT_GET_OR_NULL(DAC_NODE);
 
 static const struct dac_channel_cfg dac_ch_cfg =
 {
