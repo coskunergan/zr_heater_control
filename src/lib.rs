@@ -26,7 +26,7 @@ use zephyr::{
 };
 
 use core::{
-    sync::atomic::AtomicBool, sync::atomic::AtomicI32, sync::atomic::AtomicU16,
+    sync::atomic::AtomicI32, sync::atomic::AtomicU16,
     sync::atomic::Ordering,
 };
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
@@ -39,7 +39,7 @@ use dac_io::Dac;
 use display_io::Display;
 use ds18b20_io::Ds18b20;
 use sogi_pll::sogi_pll::{
-    fast_sin, pi_transfer, spll_update, SogiPllState, PHASE_OFFSET, Q15_SCALE,
+    pi_transfer, spll_update, SogiPllState, Q15_SCALE,
 };
 
 mod adc_io;
@@ -155,7 +155,7 @@ async fn display_task(spawner: Spawner) {
                 (duration_ns as f32 / 1e3)
             );
 
-        let _ = Timer::after(Duration::from_millis(30)).await;
+        let _ = Timer::after(Duration::from_millis(50)).await;
 
         DISPLAY_SIGNAL.wait().await;
     }

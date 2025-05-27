@@ -41,11 +41,10 @@ pub mod sogi_pll {
     pub const HALF_SCALE: i32 = (0.5 * Q15_SCALE) as i32;
     pub const DEFAULT_DENOM: i32 = (1.0 * Q15_SCALE) as i32;
     pub const THETA_SCALE: i32 = (360.0 / (TWO_PI * 180.0) * Q15_SCALE) as i32;
-    pub const PHASE_OFFSET: i32 = ((consts::PI / 2.0) * Q15_SCALE) as i32;
 
-    pub fn q15_to_float(value: i32) -> f32 {
-        value as f32 / Q15_SCALE
-    }
+    // pub fn q15_to_float(value: i32) -> f32 {
+    //     value as f32 / Q15_SCALE
+    // }
 
     pub fn q15_mul(a: i32, b: i32) -> i32 {
         (((a as i64) * (b as i64)) >> Q15_SHIFT) as i32
