@@ -53,11 +53,11 @@
 			label = "Button";
 		};
 		encoder_a: encoder_a {
-			gpios = <&gpioa 1 (GPIO_PULL_UP | GPIO_ACTIVE_LOW)>;
+			gpios = <&gpioa 0 (GPIO_PULL_UP | GPIO_ACTIVE_LOW)>;
 			label = "Encoder A";
 		};
 		encoder_b: encoder_b {
-			gpios = <&gpioa 4 (GPIO_PULL_UP | GPIO_ACTIVE_LOW)>;
+			gpios = <&gpioa 1 (GPIO_PULL_UP | GPIO_ACTIVE_LOW)>;
 			label = "Encoder B";
 		};											
 	};		

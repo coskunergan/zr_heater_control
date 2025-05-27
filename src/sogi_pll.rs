@@ -3,11 +3,8 @@
 // Coskun ERGAN <coskunergan@gmail.com>
 
 extern crate alloc;
-use alloc::format;
-use core::f32::consts;
 
 pub mod sogi_pll {
-    use alloc::format;
     use core::f32::consts;
     pub const Q15_SHIFT: i32 = 15;
     pub const Q15_SCALE: f32 = (1 << Q15_SHIFT) as f32;

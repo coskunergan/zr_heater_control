@@ -15,7 +15,7 @@ use embassy_executor::Executor;
 #[cfg(feature = "executor-zephyr")]
 use zephyr::embassy::Executor;
 
-use core::{cell::OnceCell, f64::MAX};
+use core::cell::OnceCell;
 use critical_section::Mutex as CriticalMutex;
 use embassy_executor::Spawner;
 use static_cell::StaticCell;
@@ -25,7 +25,10 @@ use zephyr::{
     sync::{Arc, Mutex},
 };
 
-use core::{sync::atomic::AtomicBool, sync::atomic::AtomicI32, sync::atomic::Ordering};
+use core::{
+    sync::atomic::AtomicBool, sync::atomic::AtomicI32, sync::atomic::AtomicU16,
+    sync::atomic::Ordering,
+};
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::signal::Signal;
 // use zephyr::device::{self, i2c};
@@ -36,8 +39,7 @@ use dac_io::Dac;
 use display_io::Display;
 use ds18b20_io::Ds18b20;
 use sogi_pll::sogi_pll::{
-    fast_sin, pi_transfer, q15_to_float, spll_update, SogiPllState, N_SAMPLE, PHASE_OFFSET,
-    Q15_SCALE,
+    fast_sin, pi_transfer, spll_update, SogiPllState, PHASE_OFFSET, Q15_SCALE,
 };
 
 mod adc_io;
@@ -48,6 +50,8 @@ mod ds18b20_io;
 mod encoder;
 mod sogi_pll;
 mod usage;
+
+const PULSE_OFF_DEGREE: u16 = 170;
 
 static EXECUTOR_MAIN: StaticCell<Executor> = StaticCell::new();
 
@@ -62,7 +66,8 @@ pub static BUTTON_SIGNAL: Signal<CriticalSectionRawMutex, bool> = Signal::new();
 pub static ENCODER_SIGNAL: Signal<CriticalSectionRawMutex, bool> = Signal::new();
 pub static DISPLAY_SIGNAL: Signal<CriticalSectionRawMutex, bool> = Signal::new();
 static SENSOR_VALUE: AtomicI32 = AtomicI32::new(0);
-static ENCODER_COUNT: AtomicI32 = AtomicI32::new(0);
+static ENCODER_COUNT: AtomicU16 = AtomicU16::new(0);
+static SET_THETA: AtomicU16 = AtomicU16::new(0);
 
 fn adc_callback(idx: usize, value: i16) {
     if idx == 0 {
@@ -70,24 +75,21 @@ fn adc_callback(idx: usize, value: i16) {
             if let Some(state_ref) = SOGI_STATE_REF.borrow(cs).get() {
                 let mut state = state_ref.lock().unwrap();
                 state.duration_ns = usage::measure_function_duration_ns(|| {
-                    spll_update(value as i32 * Q15_SCALE as i32, &mut state)
+                    spll_update(value as i32 * Q15_SCALE as i32, &mut state);
+                    let theta: u16 = state.get_theta() % (180 as u16);
+                    let set_theta: u16 = SET_THETA.load(Ordering::SeqCst);
+                    if !state.get_lock() {
+                        // pin LOW
+                    } else if theta > set_theta {
+                        // pin HIGH
+                    } else if theta > PULSE_OFF_DEGREE || theta < set_theta {
+                        // pin LOW
+                    }
+                    if let Some(dac_ref) = DAC_STATE_REF.borrow(cs).get() {
+                        let dac = dac_ref.lock().unwrap();
+                        dac.write((theta * (4096 / 180)) as u32);
+                    }
                 }) as u32;
-
-                // if let Some(dac_ref) = DAC_STATE_REF.borrow(cs).get() {
-                //     let dac = dac_ref.lock().unwrap();
-                //     let phase = sogi_pll::sogi_pll::q15_add(state.cur_phase, PHASE_OFFSET);
-                //     let sin_value: i32 = fast_sin(phase);
-                //     let amplitude = {
-                //         let amp = q15_to_float(sogi_pll::sogi_pll::q15_sub(
-                //             state.auto_offset_max,
-                //             state.auto_offset_min,
-                //         )) * 0.5;
-                //         (amp * 2048.0).min(2048.0)
-                //     };
-                //     let dac_value =
-                //         (q15_to_float(sin_value) * amplitude + 2048.0).clamp(0.0, 4095.0) as u32;
-                //     dac.write(dac_value);
-                // }
             }
         });
     }
@@ -95,6 +97,7 @@ fn adc_callback(idx: usize, value: i16) {
 
 #[embassy_executor::task]
 async fn display_task(spawner: Spawner) {
+    let _ = spawner;
     let display = Display::new();
     let mut cur_phase: i32 = 0;
     let mut omega: i32 = 0;
@@ -110,17 +113,6 @@ async fn display_task(spawner: Spawner) {
 
     display.set_backlight(1);
 
-    let mut my_pid = sogi_pll::sogi_pll::PidState {
-        i_sum: 0,
-        sat_err: 0,
-        kp: 75 * 3276, // 7.5
-        ki: 15 * 327,  // 0.15
-        kc: 10 * 327,  // 0.1
-        i_min: 18 * 32768,
-        i_max: 45 * 32768,
-    };
-
-    let mut data: i32 = 0;
     loop {
         critical_section::with(|cs| {
             let state_ref = SOGI_STATE_REF.borrow(cs).get().unwrap();
@@ -165,17 +157,16 @@ async fn display_task(spawner: Spawner) {
 
         let _ = Timer::after(Duration::from_millis(30)).await;
 
-        // let mut res = pi_transfer(0, &mut my_pid);
-
         DISPLAY_SIGNAL.wait().await;
     }
 }
 
 #[embassy_executor::task]
 async fn sensor_task(spawner: Spawner) {
+    let _ = spawner;
     let sensor = Ds18b20::new();
     let mut data: i32 = 0;
-    let mut data_mem: i32 = 1;
+    let mut data_mem: i32 = i32::MAX;
     loop {
         let _ = Timer::after(Duration::from_millis(2000)).await;
         if sensor.read(&mut data) == 0 {
@@ -184,7 +175,7 @@ async fn sensor_task(spawner: Spawner) {
         } else {
             log::info!("Sensor read ERROR!\n\0");
         }
-       // if data_mem != data 
+        // if data_mem != data
         {
             data_mem = data;
             DISPLAY_SIGNAL.signal(true);
@@ -235,6 +226,30 @@ async fn button_task(spawner: Spawner) {
     );
 }
 
+#[embassy_executor::task]
+async fn control_task(spawner: Spawner) {
+    let _ = spawner;
+    let mut pid = sogi_pll::sogi_pll::PidState {
+        i_sum: 0,
+        sat_err: 0,
+        kp: 75 * 3276, // 7.5
+        ki: 15 * 327,  // 0.15
+        kc: 10 * 327,  // 0.1
+        i_min: 0 * 32768,
+        i_max: PULSE_OFF_DEGREE as i32 * 32768,
+    };
+
+    loop {
+        let _ = Timer::after(Duration::from_millis(500)).await;
+
+        let set_value: u16 = ENCODER_COUNT.load(Ordering::SeqCst) / 10;
+        let measure_value: i32 = SENSOR_VALUE.load(Ordering::SeqCst);
+        let set_degree = pi_transfer(measure_value - set_value as i32, &mut pid) as u16;
+
+        SET_THETA.store(set_degree, Ordering::Release);
+    }
+}
+
 #[no_mangle]
 extern "C" fn rust_main() {
     let _ = usage::set_logger();
@@ -249,10 +264,10 @@ extern "C" fn rust_main() {
         SOGI_STATE_REF.borrow(cs).set(sogi_state).unwrap();
     });
 
-    // let dac_state = DAC_STATE.init(Mutex::new(Dac::new()));
-    // critical_section::with(|cs| {
-    //     DAC_STATE_REF.borrow(cs).set(dac_state).unwrap();
-    // });
+    let dac_state = DAC_STATE.init(Mutex::new(Dac::new()));
+    critical_section::with(|cs| {
+        DAC_STATE_REF.borrow(cs).set(dac_state).unwrap();
+    });
 
     let mut adc = Adc::new();
     adc.read_async_isr(
@@ -265,5 +280,6 @@ extern "C" fn rust_main() {
         spawner.spawn(display_task(spawner)).unwrap();
         spawner.spawn(sensor_task(spawner)).unwrap();
         spawner.spawn(button_task(spawner)).unwrap();
+        spawner.spawn(control_task(spawner)).unwrap();
     })
 }
