@@ -61,7 +61,7 @@ static DAC_STATE_REF: CriticalMutex<OnceCell<&'static Mutex<Dac>>> =
 pub static BUTTON_SIGNAL: Signal<CriticalSectionRawMutex, bool> = Signal::new();
 pub static ENCODER_SIGNAL: Signal<CriticalSectionRawMutex, bool> = Signal::new();
 pub static DISPLAY_SIGNAL: Signal<CriticalSectionRawMutex, bool> = Signal::new();
-static SENSOR_VALUE: AtomicI32 = AtomicI32::new(0);
+static MEASURE_VALUE: AtomicI32 = AtomicI32::new(0);
 static ENCODER_COUNT: AtomicI32 = AtomicI32::new(0);
 static SET_THETA: AtomicI32 = AtomicI32::new(0);
 
@@ -139,7 +139,7 @@ async fn display_task(spawner: Spawner) {
         //log::info!(
         zephyr::printk!(
                 ">SENSOR:{}, ENC:{}, OFFSET_MAX:{:.3}, OFFSET_MIN:{:.3}, OMEGA:{:.3}, THETA:{:.3}, S1:{:.3}, S2:{:.3}, ERR:{:.3}, FREQ:{:.3}, D_TIME:{}\n\0",
-                SENSOR_VALUE.load(Ordering::SeqCst),
+                MEASURE_VALUE.load(Ordering::SeqCst),
                 ENCODER_COUNT.load(Ordering::SeqCst),
                 auto_offset_min,
                 auto_offset_max,
@@ -155,28 +155,6 @@ async fn display_task(spawner: Spawner) {
         let _ = Timer::after(Duration::from_millis(50)).await;
 
         DISPLAY_SIGNAL.wait().await;
-    }
-}
-
-#[embassy_executor::task]
-async fn sensor_task(spawner: Spawner) {
-    let _ = spawner;
-    let sensor = Ds18b20::new();
-    let mut data: i32 = 0;
-    let mut data_mem: i32 = i32::MAX;
-    loop {
-        let _ = Timer::after(Duration::from_millis(2000)).await;
-        if sensor.read(&mut data) == 0 {
-            log::info!("Sensor Value: {}\n\0", (data as f32 / 32768.0)); // TEST
-            SENSOR_VALUE.store(data, Ordering::Release);
-        } else {
-            log::info!("Sensor read ERROR!\n\0");
-        }
-        // if data_mem != data
-        {
-            data_mem = data;
-            DISPLAY_SIGNAL.signal(true);
-        }
     }
 }
 
@@ -235,14 +213,23 @@ async fn control_task(spawner: Spawner) {
         i_min: 0,
         i_max: MAX_PULSE_DEGREE,
     };
-
+    let sensor = Ds18b20::new();
+    let mut measure_value: i32 = 0;
     loop {
+        //---------------------------------------------
         let _ = Timer::after(Duration::from_millis(500)).await;
-
+        //---------------------------------------------
         let set_value: i32 = ENCODER_COUNT.load(Ordering::SeqCst);
-        let measure_value: i32 = SENSOR_VALUE.load(Ordering::SeqCst);
+        //---------------------------------------------
+        if sensor.read(&mut measure_value) == 0 {
+            log::info!("Sensor Value: {}\n\0", (measure_value as f32 / 32768.0)); // TEST
+            MEASURE_VALUE.store(measure_value, Ordering::Release);
+        } else {
+            log::info!("Sensor read ERROR!\n\0");
+        }        
+        //---------------------------------------------
         let set_degree: i32 = pi_transfer(measure_value - set_value as i32, &mut pid);
-
+        //---------------------------------------------
         SET_THETA.store(set_degree, Ordering::Release);
     }
 }
@@ -275,7 +262,6 @@ extern "C" fn rust_main() {
     let executor = EXECUTOR_MAIN.init(Executor::new());
     executor.run(|spawner| {
         spawner.spawn(display_task(spawner)).unwrap();
-        spawner.spawn(sensor_task(spawner)).unwrap();
         spawner.spawn(button_task(spawner)).unwrap();
         spawner.spawn(control_task(spawner)).unwrap();
     })
