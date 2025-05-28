@@ -9,7 +9,7 @@ pub mod sogi_pll {
     pub const Q15_SHIFT: i32 = 15;
     pub const Q15_SCALE: f32 = (1 << Q15_SHIFT) as f32;
     pub const TWO_PI: f32 = consts::PI * 2.0;
-    pub const SAMPLE_FREQ: f32 = 1000.0;
+    pub const SAMPLE_FREQ: f32 = 2500.0;
     pub const TARGET_FREQ: f32 = 50.0;
     pub const TARGET_FREQ_RANGE: f32 = 15.0;
     pub const PI_Q15: i32 = (consts::PI * Q15_SCALE) as i32;

@@ -128,12 +128,16 @@ async fn display_task(spawner: Spawner) {
         });
 
         display.clear();
+        // let msg = format!(
+        //     "Val:{:<03}   F:{:<02}Hz    D:{:.2} uS",
+        //     ENCODER_COUNT.load(Ordering::SeqCst) / ENCODER_STEP,
+        //     freq,
+        //     (duration_ns as f32 / 1e3)
+        // );
         let msg = format!(
-            "Val:{:<03}   F:{:<02}Hz    D:{:.2} uS",
-            ENCODER_COUNT.load(Ordering::SeqCst) / ENCODER_STEP,
-            freq,
-            (duration_ns as f32 / 1e3)
-        );
+            "Val:{:<03}",
+            ENCODER_COUNT.load(Ordering::SeqCst) / ENCODER_STEP            
+        );        
         display.write(msg.as_bytes());
 
         //log::info!(
