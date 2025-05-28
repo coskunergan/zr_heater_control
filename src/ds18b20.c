@@ -10,8 +10,7 @@
 
 LOG_MODULE_REGISTER(ds18b20, LOG_LEVEL_DBG);
 
-//static const struct device *const dev = DEVICE_DT_GET_OR_NULL(DT_NODELABEL(maxim_ds18b20));
-static const struct device *const dev = DEVICE_DT_GET_OR_NULL(ds18b20);
+static const struct device *const dev = DEVICE_DT_GET_ANY(maxim_ds18b20);
 
 int ds18b20_init()
 {
@@ -23,8 +22,8 @@ int ds18b20_init()
     return 0;
 }
 
-int ds18b20_read(int32_t *value)
-{    
+int ds18b20_read_q15(int32_t *value)
+{
     if(dev)
     {
         struct sensor_value temp;
@@ -32,7 +31,7 @@ int ds18b20_read(int32_t *value)
         if(rc == 0)
         {
             sensor_channel_get(dev, SENSOR_CHAN_AMBIENT_TEMP, &temp);
-            *value = temp.val2;
+            *value = ((uint64_t)temp.val1 * 32768) + (((uint64_t)temp.val2 * 32768) / 1000000);
         }
         return rc;
     }

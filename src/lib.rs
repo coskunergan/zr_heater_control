@@ -25,10 +25,7 @@ use zephyr::{
     sync::{Arc, Mutex},
 };
 
-use core::{
-    sync::atomic::AtomicI32, sync::atomic::AtomicU16,
-    sync::atomic::Ordering,
-};
+use core::{sync::atomic::AtomicI32, sync::atomic::AtomicU16, sync::atomic::Ordering};
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::signal::Signal;
 // use zephyr::device::{self, i2c};
@@ -38,9 +35,7 @@ use adc_io::Adc;
 use dac_io::Dac;
 use display_io::Display;
 use ds18b20_io::Ds18b20;
-use sogi_pll::sogi_pll::{
-    pi_transfer, spll_update, SogiPllState, Q15_SCALE,
-};
+use sogi_pll::sogi_pll::{pi_transfer, spll_update, SogiPllState, Q15_SCALE};
 
 mod adc_io;
 mod button;
@@ -51,7 +46,8 @@ mod encoder;
 mod sogi_pll;
 mod usage;
 
-const PULSE_OFF_DEGREE: u16 = 170;
+const MAX_PULSE_DEGREE: i32 = 170 * 32768;
+const ENCODER_STEP: i32 = (0.1 * 32768.0) as i32;
 
 static EXECUTOR_MAIN: StaticCell<Executor> = StaticCell::new();
 
@@ -66,8 +62,8 @@ pub static BUTTON_SIGNAL: Signal<CriticalSectionRawMutex, bool> = Signal::new();
 pub static ENCODER_SIGNAL: Signal<CriticalSectionRawMutex, bool> = Signal::new();
 pub static DISPLAY_SIGNAL: Signal<CriticalSectionRawMutex, bool> = Signal::new();
 static SENSOR_VALUE: AtomicI32 = AtomicI32::new(0);
-static ENCODER_COUNT: AtomicU16 = AtomicU16::new(0);
-static SET_THETA: AtomicU16 = AtomicU16::new(0);
+static ENCODER_COUNT: AtomicI32 = AtomicI32::new(0);
+static SET_THETA: AtomicI32 = AtomicI32::new(0);
 
 fn adc_callback(idx: usize, value: i16) {
     if idx == 0 {
@@ -76,18 +72,19 @@ fn adc_callback(idx: usize, value: i16) {
                 let mut state = state_ref.lock().unwrap();
                 state.duration_ns = usage::measure_function_duration_ns(|| {
                     spll_update(value as i32 * Q15_SCALE as i32, &mut state);
-                    let theta: u16 = state.get_theta() % (180 as u16);
-                    let set_theta: u16 = SET_THETA.load(Ordering::SeqCst);
+                    let theta: i32 = state.get_theta() % (180 * 32768);
+                    let set_theta: i32 = SET_THETA.load(Ordering::SeqCst);
                     if !state.get_lock() {
                         // pin LOW
                     } else if theta > set_theta {
                         // pin HIGH
-                    } else if theta > PULSE_OFF_DEGREE || theta < set_theta {
+                    } else if theta > MAX_PULSE_DEGREE || theta < set_theta {
                         // pin LOW
                     }
                     if let Some(dac_ref) = DAC_STATE_REF.borrow(cs).get() {
                         let dac = dac_ref.lock().unwrap();
-                        dac.write((theta * (4096 / 180)) as u32);
+                        let dac_value = (((theta * 4096) / 32768) / 180).clamp(0, 4095) as u32;
+                        dac.write(dac_value);
                     }
                 }) as u32;
             }
@@ -109,7 +106,7 @@ async fn display_task(spawner: Spawner) {
     let mut duration_ns: u32 = 0;
     let mut lock: bool = false;
     let mut freq: u8 = 0;
-    let mut theta: u16 = 0;
+    let mut theta: i32 = 0;
 
     display.set_backlight(1);
 
@@ -133,7 +130,7 @@ async fn display_task(spawner: Spawner) {
         display.clear();
         let msg = format!(
             "Val:{:<03}   F:{:<02}Hz    D:{:.2} uS",
-            ENCODER_COUNT.load(Ordering::SeqCst),
+            ENCODER_COUNT.load(Ordering::SeqCst) / ENCODER_STEP,
             freq,
             (duration_ns as f32 / 1e3)
         );
@@ -170,7 +167,7 @@ async fn sensor_task(spawner: Spawner) {
     loop {
         let _ = Timer::after(Duration::from_millis(2000)).await;
         if sensor.read(&mut data) == 0 {
-            log::info!("Sensor Value: {}\n\0", data);
+            log::info!("Sensor Value: {}\n\0", (data as f32 / 32768.0)); // TEST
             SENSOR_VALUE.store(data, Ordering::Release);
         } else {
             log::info!("Sensor read ERROR!\n\0");
@@ -213,9 +210,9 @@ async fn button_task(spawner: Spawner) {
             |clockwise| {
                 let mut value = ENCODER_COUNT.load(Ordering::SeqCst);
                 if clockwise {
-                    value += 1;
+                    value += ENCODER_STEP;
                 } else {
-                    value -= 1;
+                    value -= ENCODER_STEP;
                 }
                 ENCODER_COUNT.store(value, Ordering::Release);
                 ENCODER_SIGNAL.signal(clockwise);
@@ -235,16 +232,16 @@ async fn control_task(spawner: Spawner) {
         kp: 75 * 3276, // 7.5
         ki: 15 * 327,  // 0.15
         kc: 10 * 327,  // 0.1
-        i_min: 0 * 32768,
-        i_max: PULSE_OFF_DEGREE as i32 * 32768,
+        i_min: 0,
+        i_max: MAX_PULSE_DEGREE,
     };
 
     loop {
         let _ = Timer::after(Duration::from_millis(500)).await;
 
-        let set_value: u16 = ENCODER_COUNT.load(Ordering::SeqCst) / 10;
+        let set_value: i32 = ENCODER_COUNT.load(Ordering::SeqCst);
         let measure_value: i32 = SENSOR_VALUE.load(Ordering::SeqCst);
-        let set_degree = pi_transfer(measure_value - set_value as i32, &mut pid) as u16;
+        let set_degree: i32 = pi_transfer(measure_value - set_value as i32, &mut pid);
 
         SET_THETA.store(set_degree, Ordering::Release);
     }

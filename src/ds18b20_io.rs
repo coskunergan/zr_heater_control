@@ -4,7 +4,7 @@
 
 extern "C" {
     fn ds18b20_init() -> i32;
-    fn ds18b20_read(data: &mut i32) -> i32;
+    fn ds18b20_read_q15(data: &mut i32) -> i32;
 }
 
 pub struct Ds18b20 {
@@ -18,6 +18,6 @@ impl Ds18b20 {
     }
 
     pub fn read(&self, data: &mut i32)  -> i32{
-        unsafe { ds18b20_read(data) }
+        unsafe { ds18b20_read_q15(data) }
     }
 }

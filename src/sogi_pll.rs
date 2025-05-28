@@ -42,10 +42,6 @@ pub mod sogi_pll {
     pub const DEFAULT_DENOM: i32 = (1.0 * Q15_SCALE) as i32;
     pub const THETA_SCALE: i32 = (360.0 / (TWO_PI * 180.0) * Q15_SCALE) as i32;
 
-    // pub fn q15_to_float(value: i32) -> f32 {
-    //     value as f32 / Q15_SCALE
-    // }
-
     pub fn q15_mul(a: i32, b: i32) -> i32 {
         (((a as i64) * (b as i64)) >> Q15_SHIFT) as i32
     }
@@ -138,8 +134,8 @@ pub mod sogi_pll {
             (q15_div(self.omega, TAU_Q15) / Q15_SCALE as i32).clamp((TARGET_FREQ - TARGET_FREQ_RANGE)as i32, (TARGET_FREQ + TARGET_FREQ_RANGE) as i32) as u8
         }
 
-        pub fn get_theta(&self) -> u16 {
-            (q15_mul(self.cur_phase, THETA_SCALE) / Q15_SCALE as i32) as u16
+        pub fn get_theta(&self) -> i32 {
+            q15_mul(self.cur_phase, THETA_SCALE)
         }
 
         pub fn get_lock(&self) -> bool {
