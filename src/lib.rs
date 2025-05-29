@@ -44,9 +44,12 @@ mod button;
 mod dac_io;
 mod display_io;
 mod ds18b20_io;
+mod eeprom_int;
 mod encoder;
 mod sogi_pll;
 mod usage;
+
+use crate::eeprom_int::EepromInt;
 
 const MAX_PULSE_DEGREE: i32 = 170 * 32768;
 const ENCODER_STEP: i32 = (0.1 * 32768.0) as i32;
@@ -135,7 +138,11 @@ async fn display_task(spawner: Spawner) {
         let msg = format!(
             "ISI: {:04.1}  %{:02}  SET:{}{:02}.{:1}{} {}{:02}",
             MEASURE_VALUE.load(Ordering::SeqCst) as f32 / 32768.0,
-            (100 - (q15_div(100 * 32768, q15_div(MAX_PULSE_DEGREE, SET_THETA.load(Ordering::SeqCst)))) / 32768).clamp(0, 99),
+            (100 - (q15_div(
+                100 * 32768,
+                q15_div(MAX_PULSE_DEGREE, SET_THETA.load(Ordering::SeqCst))
+            )) / 32768)
+                .clamp(0, 99),
             if set_mode { '>' } else { ' ' },
             encoder / 10,
             encoder % 10,
@@ -210,9 +217,6 @@ async fn button_task(spawner: Spawner) {
     );
 }
 
-static mut EEPROM_DEVICE: *const device = core::ptr::null();
-use crate::raw::device_get_binding;
-
 #[embassy_executor::task]
 async fn control_task(spawner: Spawner) {
     let _ = spawner;
@@ -228,12 +232,24 @@ async fn control_task(spawner: Spawner) {
     let sensor = Ds18b20::new();
     let mut measure_value: i32 = 0;
 
-    //let button = zephyr::devicetree::labels::button::get_instance().unwrap();
-    unsafe {
-        EEPROM_DEVICE = device_get_binding(c"eeprom1".as_ptr() as *const core::ffi::c_char);
+    let eeprom = EepromInt::new();
+
+    let eeprom_data: i32 = 27 * 32768;
+
+    match eeprom.write(0, &eeprom_data.to_le_bytes()) {
+        Ok(()) => log::info!("Veri başarıyla yazıldı: {:?}", eeprom_data),
+        Err(e) => log::info!("Yazma hatası, hata kodu: {}", e),
     }
 
-     let mut data_eeprom: [u8; 16] = [0; 16];
+    let mut read_data = [0u8; 4];
+    match eeprom.read(0, &mut read_data) {
+        Ok(()) => log::info!("Okunan veri: {:?}", read_data),
+        Err(e) => log::info!("Okuma hatası, hata kodu: {}", e),
+    }
+    let read_value = i32::from_le_bytes(read_data);
+
+    log::info!("Okunan i32 veri: {:?}", read_value);
+
     loop {
         //---------------------------------------------
         let _ = Timer::after(Duration::from_millis(500)).await;
@@ -252,10 +268,6 @@ async fn control_task(spawner: Spawner) {
         SET_THETA.store(set_degree, Ordering::Release);
 
         DISPLAY_SIGNAL.signal(true);
-
-        //---------------------------------------------
-
-        //raw::eprom_read(EEPROM_DEVICE, 0 ,data_eeprom.as_ptr(), data_eeprom.len());
     }
 }
 

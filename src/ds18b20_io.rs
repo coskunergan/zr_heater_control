@@ -13,11 +13,13 @@ pub struct Ds18b20 {
 
 impl Ds18b20 {
     pub fn new() -> Self {
-        unsafe { ds18b20_init(); };        
+        unsafe {
+            ds18b20_init();
+        };
         Ds18b20 { _private: () }
     }
 
-    pub fn read(&self, data: &mut i32)  -> i32{
+    pub fn read(&self, data: &mut i32) -> i32 {
         unsafe { ds18b20_read_q15(data) }
     }
 }

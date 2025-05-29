@@ -16,24 +16,26 @@ pub struct Display {
 
 impl Display {
     pub fn new() -> Self {
-        unsafe { display_init(); };        
+        unsafe {
+            display_init();
+        };
         Display { _private: () }
     }
 
-    pub fn write(&self, data: &[u8])  -> i32{
+    pub fn write(&self, data: &[u8]) -> i32 {
         unsafe { display_write(data.as_ptr(), data.len() as u16) }
     }
-    
+
     #[allow(dead_code)]
-    pub fn clear(&self) -> i32{
-        unsafe { display_clear() }    
+    pub fn clear(&self) -> i32 {
+        unsafe { display_clear() }
     }
     #[allow(dead_code)]
-    pub fn set_cursor(&self, state: bool) -> i32{
-        unsafe { display_set_cursor(state) }        
+    pub fn set_cursor(&self, state: bool) -> i32 {
+        unsafe { display_set_cursor(state) }
     }
     #[allow(dead_code)]
-    pub fn set_backlight(&self, state: u8) -> i32{
+    pub fn set_backlight(&self, state: u8) -> i32 {
         unsafe { display_set_backlight(state) }
     }
 }

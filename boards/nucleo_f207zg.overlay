@@ -4,7 +4,6 @@
 	pinctrl-0 = <&i2c3_scl_pa8 &i2c3_sda_pc9>;
 	pinctrl-names = "default";
 	status = "okay";
-	//clock-frequency = <I2C_BITRATE_STANDARD>;
 	aux_display_gpio: pcf8574@27 {
 		compatible = "nxp,pcf857x";
 		reg = <0x27>;
@@ -12,33 +11,6 @@
 		ngpios = <8>;
 		#gpio-cells = <2>;
 	};
-	// eeprom0:eeprom@56 {
-	// 	compatible = "atmel,at24";
-	// 	reg = <0x56>;
-	// 	status = "okay";
-	// 	size = <DT_SIZE_K(32)>;
-	// 	pagesize = <64>;
-	// 	address-width = <16>;
-	// 	timeout = <5>;
-	// };	
-	// i2c_eeprom: eeprom@50 {
-	// 	status = "okay";	
-	// 	supply-gpios = <&gpiob 12 GPIO_ACTIVE_HIGH>;
-	// 	reg = <0x50>;//0x57
-	// 	size = <65536>;//256
-	// 	pagesize = <128>;//8
-	// 	address-width = <16>;//8
-	// 	timeout = <5>;
-	// };	
-	eeprom0: eeprom@50 {
-		compatible = "atmel,at24";
-		reg = <0x50>;
-		status = "okay";
-		size = <256>;
-		pagesize = <8>;
-		address-width = <8>;
-		timeout = <5>;
-	};	
 };
 
 / {
@@ -97,11 +69,8 @@
 
 	aliases {		
 		eeprom-1 = &eeprom1;
+		watchdog0 = &iwdg;
 	};		
-	//  aliases {
-	//  	eeprom-0 = &i2c_eeprom0;
-	//  	watchdog0 = &iwdg;
-	//  };
 };
 
  &flash0 {
