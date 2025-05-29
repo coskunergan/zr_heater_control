@@ -25,7 +25,7 @@ use zephyr::{
     sync::{Arc, Mutex},
 };
 
-use core::{sync::atomic::AtomicI32, sync::atomic::Ordering};
+use core::{sync::atomic::AtomicBool, sync::atomic::AtomicI32, sync::atomic::Ordering};
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::signal::Signal;
 
@@ -48,6 +48,10 @@ mod usage;
 
 const MAX_PULSE_DEGREE: i32 = 170 * 32768;
 const ENCODER_STEP: i32 = (0.1 * 32768.0) as i32;
+const ENCODER_MAX: i32 = (45.0 * 32768.0) as i32;
+const ENCODER_MIN: i32 = (10.0 * 32768.0) as i32;
+const BL_TIMEOUT_SEC: i32 = 5;
+const VERSION_MSG: &str = "Coskun ERGAN        V1.0";
 
 static EXECUTOR_MAIN: StaticCell<Executor> = StaticCell::new();
 
@@ -64,6 +68,8 @@ pub static DISPLAY_SIGNAL: Signal<CriticalSectionRawMutex, bool> = Signal::new()
 static MEASURE_VALUE: AtomicI32 = AtomicI32::new(0);
 static ENCODER_COUNT: AtomicI32 = AtomicI32::new(0);
 static SET_THETA: AtomicI32 = AtomicI32::new(0);
+static BL_TIMEOUT: AtomicI32 = AtomicI32::new(0);
+static SET_MODE: AtomicBool = AtomicBool::new(true);
 
 fn adc_callback(idx: usize, value: i16) {
     if idx == 0 {
@@ -94,7 +100,6 @@ fn adc_callback(idx: usize, value: i16) {
 
 #[embassy_executor::task]
 async fn display_task(spawner: Spawner) {
-    let _ = spawner;
     let display = Display::new();
     let mut cur_phase: i32 = 0;
     let mut omega: i32 = 0;
@@ -107,11 +112,70 @@ async fn display_task(spawner: Spawner) {
     let mut lock: bool = false;
     let mut freq: u8 = 0;
     let mut theta: i32 = 0;
-    let mut set_mode: bool = false;
+
+    let gpio_token = Arc::new(Mutex::new(unsafe { GpioToken::get_instance().unwrap() }));
+    let button = zephyr::devicetree::labels::button::get_instance().unwrap();
+
+    declare_buttons!(
+        spawner,
+        gpio_token,
+        [(
+            button,
+            || {
+                zephyr::printk!("Button Pressed!\n");
+                BL_TIMEOUT.store(BL_TIMEOUT_SEC * 2, Ordering::SeqCst);
+                SET_MODE.store(!SET_MODE.load(Ordering::SeqCst), Ordering::SeqCst);
+                DISPLAY_SIGNAL.signal(true);
+            },
+            Duration::from_millis(100)
+        )]
+    );
+
+    let encoder_a = zephyr::devicetree::labels::encoder_a::get_instance().unwrap();
+    let encoder_b = zephyr::devicetree::labels::encoder_b::get_instance().unwrap();
+
+    declare_encoders!(
+        spawner,
+        gpio_token,
+        [(
+            encoder_a,
+            encoder_b,
+            |clockwise| {
+                if SET_MODE.load(Ordering::SeqCst) {
+                    let mut value = ENCODER_COUNT.load(Ordering::SeqCst);
+                    if clockwise && value < ENCODER_MAX {
+                        value += ENCODER_STEP;
+                    } else if value > ENCODER_MIN {
+                        value -= ENCODER_STEP;
+                    }
+                    ENCODER_COUNT.store(value, Ordering::SeqCst);
+                    ENCODER_SIGNAL.signal(clockwise);
+                    DISPLAY_SIGNAL.signal(true);
+                }
+                BL_TIMEOUT.store(BL_TIMEOUT_SEC * 2, Ordering::SeqCst);
+            },
+            Duration::from_millis(1)
+        )]
+    );
 
     display.set_backlight(1);
+    display.write(VERSION_MSG.as_bytes());
+    let _ = Timer::after(Duration::from_millis(2000)).await;
 
     loop {
+        //---------------------------------------
+        let mut timeout = BL_TIMEOUT.load(Ordering::SeqCst);
+        if timeout > 0 {
+            timeout -= 1;
+            BL_TIMEOUT.store(timeout, Ordering::SeqCst);
+            if timeout == 0 {
+                SET_MODE.store(false, Ordering::SeqCst);
+                display.set_backlight(0);
+            } else {
+                display.set_backlight(1);
+            }
+        }
+        //---------------------------------------
         critical_section::with(|cs| {
             let state_ref = SOGI_STATE_REF.borrow(cs).get().unwrap();
             let state = state_ref.lock().unwrap();
@@ -128,24 +192,27 @@ async fn display_task(spawner: Spawner) {
             theta = state.get_half_theta();
         });
 
-        display.clear();
-        let encoder = ENCODER_COUNT.load(Ordering::SeqCst) / ENCODER_STEP;
-        let msg = format!(
-            "ISI: {:04.1}  %{:02}  SET:{}{:02}.{:1}{} {}{:02}",
-            MEASURE_VALUE.load(Ordering::SeqCst) as f32 / 32768.0,
-            (100 - (q15_div(
-                100 * 32768,
-                q15_div(MAX_PULSE_DEGREE, SET_THETA.load(Ordering::SeqCst))
-            )) / 32768)
-                .clamp(0, 99),
-            if set_mode { '>' } else { ' ' },
-            encoder / 10,
-            encoder % 10,
-            if set_mode { '<' } else { ' ' },
-            if lock { 'L' } else { 'x' },
-            freq
-        );
-        display.write(msg.as_bytes());
+        {
+            let mode = SET_MODE.load(Ordering::SeqCst);
+            display.clear();
+            let encoder = ENCODER_COUNT.load(Ordering::SeqCst) / ENCODER_STEP;
+            let msg = format!(
+                "ISI: {:04.1}  %{:02}  SET:{}{:02}.{:1}{} {}{:02}",
+                MEASURE_VALUE.load(Ordering::SeqCst) as f32 / 32768.0,
+                (100 - (q15_div(
+                    100 * 32768,
+                    q15_div(MAX_PULSE_DEGREE, SET_THETA.load(Ordering::SeqCst))
+                )) / 32768)
+                    .clamp(0, 99),
+                if mode { '>' } else { ' ' },
+                encoder / 10,
+                encoder % 10,
+                if mode { '<' } else { ' ' },
+                if lock { 'L' } else { 'x' },
+                freq
+            );
+            display.write(msg.as_bytes());
+        }
 
         //log::info!(
         zephyr::printk!(
@@ -170,49 +237,6 @@ async fn display_task(spawner: Spawner) {
 }
 
 #[embassy_executor::task]
-async fn button_task(spawner: Spawner) {
-    let gpio_token = Arc::new(Mutex::new(unsafe { GpioToken::get_instance().unwrap() }));
-    let button = zephyr::devicetree::labels::button::get_instance().unwrap();
-
-    declare_buttons!(
-        spawner,
-        gpio_token,
-        [(
-            button,
-            || {
-                zephyr::printk!("Button Pressed!\n");
-                BUTTON_SIGNAL.signal(true);
-            },
-            Duration::from_millis(100)
-        )]
-    );
-
-    let encoder_a = zephyr::devicetree::labels::encoder_a::get_instance().unwrap();
-    let encoder_b = zephyr::devicetree::labels::encoder_b::get_instance().unwrap();
-
-    declare_encoders!(
-        spawner,
-        gpio_token,
-        [(
-            encoder_a,
-            encoder_b,
-            |clockwise| {
-                let mut value = ENCODER_COUNT.load(Ordering::SeqCst);
-                if clockwise {
-                    value += ENCODER_STEP;
-                } else {
-                    value -= ENCODER_STEP;
-                }
-                ENCODER_COUNT.store(value, Ordering::Release);
-                ENCODER_SIGNAL.signal(clockwise);
-                DISPLAY_SIGNAL.signal(true);
-            },
-            Duration::from_millis(1)
-        )]
-    );
-}
-
-#[embassy_executor::task]
 async fn control_task(spawner: Spawner) {
     let _ = spawner;
     let mut pid = sogi_pll::sogi_pll::PidState {
@@ -234,11 +258,11 @@ async fn control_task(spawner: Spawner) {
         Err(_) => 0,
     };
 
-    if eeprom_value < (10 * 32768) || eeprom_value > (45 * 32768) {
-        eeprom_value = 27 * 32768; // default
+    if eeprom_value < ENCODER_MIN || eeprom_value > ENCODER_MAX {
+        eeprom_value = (ENCODER_MAX - ENCODER_MIN) / 2; // default
     }
 
-    ENCODER_COUNT.store(eeprom_value, Ordering::Release);
+    ENCODER_COUNT.store(eeprom_value, Ordering::SeqCst);
 
     loop {
         //---------------------------------------------
@@ -247,11 +271,13 @@ async fn control_task(spawner: Spawner) {
         let set_value: i32 = ENCODER_COUNT.load(Ordering::SeqCst);
         //---------------------------------------------
         if sensor.read(&mut measure_value) == 0 {
-            log::info!("Sensor Value: {}\n\0", (measure_value as f32 / 32768.0)); // TEST
-            MEASURE_VALUE.store(measure_value, Ordering::Release);
+            log::info!("Sensor Value: {}\n\0", (measure_value as f32 / 32768.0));
+        // TEST
         } else {
+            measure_value = 99;
             log::info!("Sensor read ERROR!\n\0");
         }
+        MEASURE_VALUE.store(measure_value, Ordering::SeqCst);
         //---------------------------------------------
         let set_degree: i32 = pi_transfer(measure_value - set_value as i32, &mut pid);
         //---------------------------------------------
@@ -277,13 +303,6 @@ async fn control_task(spawner: Spawner) {
 extern "C" fn rust_main() {
     let _ = usage::set_logger();
 
-    ENCODER_COUNT.store(27 * 32768, Ordering::Release);
-
-    // let  i2c_dev = zephyr::devicetree::aliases::eeprom_0::get_instance().unwrap();
-    // let get_serial: [u8; 2] = [0x36, 0x82];
-    // let mut id: [u8; 9] = [0, 0, 0, 0, 0, 0, 0, 0, 0];
-    // i2c_dev.write_read(&get_serial, &mut id);
-
     let sogi_state = SOGI_STATE.init(Mutex::new(SogiPllState::new()));
     critical_section::with(|cs| {
         SOGI_STATE_REF.borrow(cs).set(sogi_state).unwrap();
@@ -303,7 +322,6 @@ extern "C" fn rust_main() {
     let executor = EXECUTOR_MAIN.init(Executor::new());
     executor.run(|spawner| {
         spawner.spawn(display_task(spawner)).unwrap();
-        spawner.spawn(button_task(spawner)).unwrap();
         spawner.spawn(control_task(spawner)).unwrap();
     })
 }
