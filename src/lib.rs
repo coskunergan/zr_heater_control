@@ -34,6 +34,7 @@ use dac_io::Dac;
 use display_io::Display;
 use ds18b20_io::Ds18b20;
 use eeprom_int::EepromInt;
+use iwdt_io::Iwdt;
 use sogi_pll::sogi_pll::{pi_transfer, q15_div, spll_update, SogiPllState, Q15_SCALE};
 
 mod adc_io;
@@ -43,6 +44,7 @@ mod display_io;
 mod ds18b20_io;
 mod eeprom_int;
 mod encoder;
+mod iwdt_io;
 mod sogi_pll;
 mod usage;
 
@@ -79,7 +81,7 @@ fn adc_callback(idx: usize, value: i16) {
                 state.duration_ns = usage::measure_function_duration_ns(|| {
                     spll_update(value as i32 * Q15_SCALE as i32, &mut state);
                     let theta: i32 = state.get_half_theta();
-                    let set_theta: i32 = SET_THETA.load(Ordering::SeqCst);
+                    let set_theta: i32 = SET_THETA.load(Ordering::Relaxed);
                     if !state.get_lock() {
                         // pin LOW
                     } else if theta > set_theta {
@@ -123,8 +125,8 @@ async fn display_task(spawner: Spawner) {
             button,
             || {
                 zephyr::printk!("Button Pressed!\n");
-                BL_TIMEOUT.store(BL_TIMEOUT_SEC * 2, Ordering::SeqCst);
-                SET_MODE.store(!SET_MODE.load(Ordering::SeqCst), Ordering::SeqCst);
+                BL_TIMEOUT.store(BL_TIMEOUT_SEC * 2, Ordering::Relaxed);
+                SET_MODE.store(!SET_MODE.load(Ordering::Relaxed), Ordering::Relaxed);
                 DISPLAY_SIGNAL.signal(true);
             },
             Duration::from_millis(100)
@@ -141,18 +143,18 @@ async fn display_task(spawner: Spawner) {
             encoder_a,
             encoder_b,
             |clockwise| {
-                if SET_MODE.load(Ordering::SeqCst) {
-                    let mut value = ENCODER_COUNT.load(Ordering::SeqCst);
+                if SET_MODE.load(Ordering::Relaxed) {
+                    let mut value = ENCODER_COUNT.load(Ordering::Relaxed);
                     if clockwise && value < ENCODER_MAX {
                         value += ENCODER_STEP;
                     } else if value > ENCODER_MIN {
                         value -= ENCODER_STEP;
                     }
-                    ENCODER_COUNT.store(value, Ordering::SeqCst);
+                    ENCODER_COUNT.store(value, Ordering::Relaxed);
                     ENCODER_SIGNAL.signal(clockwise);
                     DISPLAY_SIGNAL.signal(true);
                 }
-                BL_TIMEOUT.store(BL_TIMEOUT_SEC * 2, Ordering::SeqCst);
+                BL_TIMEOUT.store(BL_TIMEOUT_SEC * 2, Ordering::Relaxed);
             },
             Duration::from_millis(1)
         )]
@@ -164,12 +166,12 @@ async fn display_task(spawner: Spawner) {
 
     loop {
         //---------------------------------------
-        let mut timeout = BL_TIMEOUT.load(Ordering::SeqCst);
+        let mut timeout = BL_TIMEOUT.load(Ordering::Relaxed);
         if timeout > 0 {
             timeout -= 1;
-            BL_TIMEOUT.store(timeout, Ordering::SeqCst);
+            BL_TIMEOUT.store(timeout, Ordering::Relaxed);
             if timeout == 0 {
-                SET_MODE.store(false, Ordering::SeqCst);
+                SET_MODE.store(false, Ordering::Relaxed);
                 display.set_backlight(0);
             } else {
                 display.set_backlight(1);
@@ -193,15 +195,15 @@ async fn display_task(spawner: Spawner) {
         });
 
         {
-            let mode = SET_MODE.load(Ordering::SeqCst);
+            let mode = SET_MODE.load(Ordering::Relaxed);
             display.clear();
-            let encoder = ENCODER_COUNT.load(Ordering::SeqCst) / ENCODER_STEP;
+            let encoder = ENCODER_COUNT.load(Ordering::Relaxed) / ENCODER_STEP;
             let msg = format!(
                 "ISI: {:04.1}  %{:02}  SET:{}{:02}.{:1}{} {}{:02}",
-                MEASURE_VALUE.load(Ordering::SeqCst) as f32 / 32768.0,
+                MEASURE_VALUE.load(Ordering::Relaxed) as f32 / 32768.0,
                 (100 - (q15_div(
                     100 * 32768,
-                    q15_div(MAX_PULSE_DEGREE, SET_THETA.load(Ordering::SeqCst))
+                    q15_div(MAX_PULSE_DEGREE, SET_THETA.load(Ordering::Relaxed))
                 )) / 32768)
                     .clamp(0, 99),
                 if mode { '>' } else { ' ' },
@@ -217,8 +219,8 @@ async fn display_task(spawner: Spawner) {
         //log::info!(
         zephyr::printk!(
                 ">SENSOR:{}, ENC:{}, OFFSET_MAX:{:.3}, OFFSET_MIN:{:.3}, OMEGA:{:.3}, THETA:{:.3}, S1:{:.3}, S2:{:.3}, ERR:{:.3}, FREQ:{:.3}, D_TIME:{}\n\0",
-                MEASURE_VALUE.load(Ordering::SeqCst),
-                ENCODER_COUNT.load(Ordering::SeqCst),
+                MEASURE_VALUE.load(Ordering::Relaxed),
+                ENCODER_COUNT.load(Ordering::Relaxed),
                 auto_offset_min,
                 auto_offset_max,
                 omega,
@@ -237,7 +239,7 @@ async fn display_task(spawner: Spawner) {
 }
 
 #[embassy_executor::task]
-async fn control_task(spawner: Spawner) {
+async fn control_task(spawner: Spawner, iwdt: Iwdt) {
     let _ = spawner;
     let mut pid = sogi_pll::sogi_pll::PidState {
         i_sum: 0,
@@ -262,22 +264,24 @@ async fn control_task(spawner: Spawner) {
         eeprom_value = (ENCODER_MAX - ENCODER_MIN) / 2; // default
     }
 
-    ENCODER_COUNT.store(eeprom_value, Ordering::SeqCst);
+    ENCODER_COUNT.store(eeprom_value, Ordering::Relaxed);
 
     loop {
         //---------------------------------------------
+        iwdt.reload();
+        //---------------------------------------------
         let _ = Timer::after(Duration::from_millis(500)).await;
         //---------------------------------------------
-        let set_value: i32 = ENCODER_COUNT.load(Ordering::SeqCst);
+        let set_value: i32 = ENCODER_COUNT.load(Ordering::Relaxed);
         //---------------------------------------------
         if sensor.read(&mut measure_value) == 0 {
             log::info!("Sensor Value: {}\n\0", (measure_value as f32 / 32768.0));
         // TEST
         } else {
-            measure_value = 99;
+            measure_value = 999 * 3276;
             log::info!("Sensor read ERROR!\n\0");
         }
-        MEASURE_VALUE.store(measure_value, Ordering::SeqCst);
+        MEASURE_VALUE.store(measure_value, Ordering::Relaxed);
         //---------------------------------------------
         let set_degree: i32 = pi_transfer(measure_value - set_value as i32, &mut pid);
         //---------------------------------------------
@@ -301,7 +305,11 @@ async fn control_task(spawner: Spawner) {
 
 #[no_mangle]
 extern "C" fn rust_main() {
+    let iwdt = Iwdt::new(8000);
+
     let _ = usage::set_logger();
+
+    log::info!("Restart!!!\r\n");
 
     let sogi_state = SOGI_STATE.init(Mutex::new(SogiPllState::new()));
     critical_section::with(|cs| {
@@ -322,6 +330,6 @@ extern "C" fn rust_main() {
     let executor = EXECUTOR_MAIN.init(Executor::new());
     executor.run(|spawner| {
         spawner.spawn(display_task(spawner)).unwrap();
-        spawner.spawn(control_task(spawner)).unwrap();
+        spawner.spawn(control_task(spawner, iwdt)).unwrap();
     })
 }

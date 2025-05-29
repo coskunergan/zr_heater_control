@@ -2,22 +2,22 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Zephyr STM32F4 Debug",
+            "name": "Zephyr STM32F2 Debug",
             "type": "cortex-debug",
             "request": "launch",
             "servertype": "openocd",
             "cwd": "${workspaceFolder}",
             "executable": "${workspaceFolder}/build/zephyr/zephyr.elf",
-            "device": "STM32F407VG",
+            "device": "STM32F205RC",
             "interface": "swd",
             "configFiles": [
                 "interface/stlink.cfg",
-                "target/stm32f4x.cfg"
+                "target/stm32f2x.cfg"
             ],
             "searchDir": [
                 "/usr/share/openocd/scripts"
             ],
-            "svdFile": "${workspaceFolder}/STM32F407.svd",
+            "svdFile": "${workspaceFolder}/armcm3.svd",
             "runToEntryPoint": "main",
             "preLaunchTask": "build",
             "openOCDLaunchCommands": [
