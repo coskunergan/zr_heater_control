@@ -22,10 +22,12 @@ use static_cell::StaticCell;
 
 use zephyr::{
     device::gpio::{GpioPin, GpioToken},
+    raw,
+    raw::device,
     sync::{Arc, Mutex},
 };
 
-use core::{sync::atomic::AtomicI32, sync::atomic::AtomicU16, sync::atomic::Ordering};
+use core::{sync::atomic::AtomicI32, sync::atomic::Ordering};
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::signal::Signal;
 // use zephyr::device::{self, i2c};
@@ -35,7 +37,7 @@ use adc_io::Adc;
 use dac_io::Dac;
 use display_io::Display;
 use ds18b20_io::Ds18b20;
-use sogi_pll::sogi_pll::{pi_transfer, spll_update, SogiPllState, Q15_SCALE};
+use sogi_pll::sogi_pll::{pi_transfer, q15_div, spll_update, SogiPllState, Q15_SCALE};
 
 mod adc_io;
 mod button;
@@ -72,7 +74,7 @@ fn adc_callback(idx: usize, value: i16) {
                 let mut state = state_ref.lock().unwrap();
                 state.duration_ns = usage::measure_function_duration_ns(|| {
                     spll_update(value as i32 * Q15_SCALE as i32, &mut state);
-                    let theta: i32 = state.get_theta() % (180 * 32768);
+                    let theta: i32 = state.get_half_theta();
                     let set_theta: i32 = SET_THETA.load(Ordering::SeqCst);
                     if !state.get_lock() {
                         // pin LOW
@@ -107,6 +109,7 @@ async fn display_task(spawner: Spawner) {
     let mut lock: bool = false;
     let mut freq: u8 = 0;
     let mut theta: i32 = 0;
+    let mut set_mode: bool = false;
 
     display.set_backlight(1);
 
@@ -124,20 +127,22 @@ async fn display_task(spawner: Spawner) {
             duration_ns = state.duration_ns;
             lock = state.get_lock();
             freq = state.get_freq();
-            theta = state.get_theta();
+            theta = state.get_half_theta();
         });
 
         display.clear();
-        // let msg = format!(
-        //     "Val:{:<03}   F:{:<02}Hz    D:{:.2} uS",
-        //     ENCODER_COUNT.load(Ordering::SeqCst) / ENCODER_STEP,
-        //     freq,
-        //     (duration_ns as f32 / 1e3)
-        // );
+        let encoder = ENCODER_COUNT.load(Ordering::SeqCst) / ENCODER_STEP;
         let msg = format!(
-            "Val:{:<03}",
-            ENCODER_COUNT.load(Ordering::SeqCst) / ENCODER_STEP            
-        );        
+            "ISI: {:04.1}  %{:02}  SET:{}{:02}.{:1}{} {}{:02}",
+            MEASURE_VALUE.load(Ordering::SeqCst) as f32 / 32768.0,
+            (100 - (q15_div(100 * 32768, q15_div(MAX_PULSE_DEGREE, SET_THETA.load(Ordering::SeqCst)))) / 32768).clamp(0, 99),
+            if set_mode { '>' } else { ' ' },
+            encoder / 10,
+            encoder % 10,
+            if set_mode { '<' } else { ' ' },
+            if lock { 'L' } else { 'x' },
+            freq
+        );
         display.write(msg.as_bytes());
 
         //log::info!(
@@ -205,6 +210,9 @@ async fn button_task(spawner: Spawner) {
     );
 }
 
+static mut EEPROM_DEVICE: *const device = core::ptr::null();
+use crate::raw::device_get_binding;
+
 #[embassy_executor::task]
 async fn control_task(spawner: Spawner) {
     let _ = spawner;
@@ -219,6 +227,13 @@ async fn control_task(spawner: Spawner) {
     };
     let sensor = Ds18b20::new();
     let mut measure_value: i32 = 0;
+
+    //let button = zephyr::devicetree::labels::button::get_instance().unwrap();
+    unsafe {
+        EEPROM_DEVICE = device_get_binding(c"eeprom1".as_ptr() as *const core::ffi::c_char);
+    }
+
+     let mut data_eeprom: [u8; 16] = [0; 16];
     loop {
         //---------------------------------------------
         let _ = Timer::after(Duration::from_millis(500)).await;
@@ -230,17 +245,25 @@ async fn control_task(spawner: Spawner) {
             MEASURE_VALUE.store(measure_value, Ordering::Release);
         } else {
             log::info!("Sensor read ERROR!\n\0");
-        }        
+        }
         //---------------------------------------------
         let set_degree: i32 = pi_transfer(measure_value - set_value as i32, &mut pid);
         //---------------------------------------------
         SET_THETA.store(set_degree, Ordering::Release);
+
+        DISPLAY_SIGNAL.signal(true);
+
+        //---------------------------------------------
+
+        //raw::eprom_read(EEPROM_DEVICE, 0 ,data_eeprom.as_ptr(), data_eeprom.len());
     }
 }
 
 #[no_mangle]
 extern "C" fn rust_main() {
     let _ = usage::set_logger();
+
+    ENCODER_COUNT.store(27 * 32768, Ordering::Release);
 
     // let  i2c_dev = zephyr::devicetree::aliases::eeprom_0::get_instance().unwrap();
     // let get_serial: [u8; 2] = [0x36, 0x82];

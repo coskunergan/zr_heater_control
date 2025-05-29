@@ -86,10 +86,35 @@
 				<&aux_display_gpio 6 (GPIO_ACTIVE_HIGH)>,
 				<&aux_display_gpio 7 (GPIO_ACTIVE_HIGH)>;
 	};	
+	eeprom1: eeprom1 {
+		status = "okay";
+		compatible = "zephyr,emu-eeprom";
+		size = <DT_SIZE_K(4)>;
+		pagesize = <DT_SIZE_K(8)>;
+	 	partition = <&eepromemu_partition>;
+	 	rambuf;
+	};
+
+	aliases {		
+		eeprom-1 = &eeprom1;
+	};		
 	//  aliases {
 	//  	eeprom-0 = &i2c_eeprom0;
 	//  	watchdog0 = &iwdg;
 	//  };
+};
+
+ &flash0 {
+	partitions {
+		compatible = "fixed-partitions";
+		#address-cells = <1>;
+		#size-cells = <1>;
+
+		eepromemu_partition: partition@38000 {
+			label = "eeprom-emu";
+			reg = <0x38000 DT_SIZE_K(32)>;
+		};		
+	};
 };
 
 &usart3 {

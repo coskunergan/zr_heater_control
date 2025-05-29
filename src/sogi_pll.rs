@@ -34,7 +34,8 @@ pub mod sogi_pll {
     pub const PID_KI: i32 = (PID_KI_FLOAT * Q15_SCALE) as i32;
     pub const PID_KC: i32 = (PID_KC_FLOAT * Q15_SCALE) as i32;
     pub const INITIAL_OMEGA: i32 = (TARGET_FREQ * TWO_PI * Q15_SCALE) as i32;
-    pub const OFFSET_STEP: i32 = (((INPUT_MAX - INPUT_MIN) * Q15_SCALE as i32) / OFFSET_STEP_COEFF) as i32;
+    pub const OFFSET_STEP: i32 =
+        (((INPUT_MAX - INPUT_MIN) * Q15_SCALE as i32) / OFFSET_STEP_COEFF) as i32;
     pub const SOGI_K: i32 = (SOGI_K_FLOAT * Q15_SCALE) as i32;
     pub const ANGLE_TO_RAD: i32 = (ANGLE_TO_RAD_SCALE * Q15_SCALE) as i32;
     pub const RAD_TO_ANGLE: i32 = (RAD_TO_ANGLE_SCALE * Q15_SCALE) as i32;
@@ -131,11 +132,23 @@ pub mod sogi_pll {
         }
 
         pub fn get_freq(&self) -> u8 {
-            (q15_div(self.omega, TAU_Q15) / Q15_SCALE as i32).clamp((TARGET_FREQ - TARGET_FREQ_RANGE)as i32, (TARGET_FREQ + TARGET_FREQ_RANGE) as i32) as u8
+            (q15_div(self.omega, TAU_Q15) / Q15_SCALE as i32).clamp(
+                (TARGET_FREQ - TARGET_FREQ_RANGE) as i32,
+                (TARGET_FREQ + TARGET_FREQ_RANGE) as i32,
+            ) as u8
         }
-
+        #[allow(dead_code)]
         pub fn get_theta(&self) -> i32 {
             q15_mul(self.cur_phase, THETA_SCALE)
+        }
+        #[allow(dead_code)]
+        pub fn get_half_theta(&self) -> i32 {
+            let res = q15_mul(self.cur_phase, THETA_SCALE);
+            if res >= (180 * 32768) {
+                res - (180 * 32768)
+            } else {
+                res
+            }
         }
 
         pub fn get_lock(&self) -> bool {
