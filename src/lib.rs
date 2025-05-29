@@ -22,21 +22,18 @@ use static_cell::StaticCell;
 
 use zephyr::{
     device::gpio::{GpioPin, GpioToken},
-    raw,
-    raw::device,
     sync::{Arc, Mutex},
 };
 
 use core::{sync::atomic::AtomicI32, sync::atomic::Ordering};
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::signal::Signal;
-// use zephyr::device::{self, i2c};
-// use zephyr::raw;
 
 use adc_io::Adc;
 use dac_io::Dac;
 use display_io::Display;
 use ds18b20_io::Ds18b20;
+use eeprom_int::EepromInt;
 use sogi_pll::sogi_pll::{pi_transfer, q15_div, spll_update, SogiPllState, Q15_SCALE};
 
 mod adc_io;
@@ -48,8 +45,6 @@ mod eeprom_int;
 mod encoder;
 mod sogi_pll;
 mod usage;
-
-use crate::eeprom_int::EepromInt;
 
 const MAX_PULSE_DEGREE: i32 = 170 * 32768;
 const ENCODER_STEP: i32 = (0.1 * 32768.0) as i32;
@@ -234,21 +229,16 @@ async fn control_task(spawner: Spawner) {
 
     let eeprom = EepromInt::new();
 
-    let eeprom_data: i32 = 27 * 32768;
+    let mut eeprom_value: i32 = match eeprom.read(0) {
+        Ok(value) => value,
+        Err(_) => 0,
+    };
 
-    match eeprom.write(0, &eeprom_data.to_le_bytes()) {
-        Ok(()) => log::info!("Veri başarıyla yazıldı: {:?}", eeprom_data),
-        Err(e) => log::info!("Yazma hatası, hata kodu: {}", e),
+    if eeprom_value < (10 * 32768) || eeprom_value > (45 * 32768) {
+        eeprom_value = 27 * 32768; // default
     }
 
-    let mut read_data = [0u8; 4];
-    match eeprom.read(0, &mut read_data) {
-        Ok(()) => log::info!("Okunan veri: {:?}", read_data),
-        Err(e) => log::info!("Okuma hatası, hata kodu: {}", e),
-    }
-    let read_value = i32::from_le_bytes(read_data);
-
-    log::info!("Okunan i32 veri: {:?}", read_value);
+    ENCODER_COUNT.store(eeprom_value, Ordering::Release);
 
     loop {
         //---------------------------------------------
@@ -268,6 +258,18 @@ async fn control_task(spawner: Spawner) {
         SET_THETA.store(set_degree, Ordering::Release);
 
         DISPLAY_SIGNAL.signal(true);
+        //---------------------------------------------
+        eeprom_value = match eeprom.read(0) {
+            Ok(value) => value,
+            Err(_) => 0,
+        };
+        if eeprom_value != set_value {
+            match eeprom.write(0, &set_value) {
+                Ok(()) => log::info!("Eeprom data was write succesfly {:?}", set_value / 3276),
+                Err(e) => log::info!("Eeprom data write failure! error: {}", e),
+            };
+        }
+        //---------------------------------------------
     }
 }
 

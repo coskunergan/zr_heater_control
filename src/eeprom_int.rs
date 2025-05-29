@@ -2,11 +2,14 @@
 // SPDX-License-Identifier: Apache-2.0
 // Coskun ERGAN <coskunergan@gmail.com>
 
-use core::ptr;
-use zephyr::raw::{device, device_get_binding, eeprom_read, eeprom_write};
+use alloc::vec;
 use core::ffi::{c_char, c_int, c_void};
+use core::mem;
+use core::ptr;
+use core::slice;
+use zephyr::raw::{device, device_get_binding, eeprom_read, eeprom_write};
 
-type off_t = i32;
+type Offt = i32;
 
 static mut EEPROM_DEVICE: *const device = ptr::null();
 
@@ -18,45 +21,49 @@ impl EepromInt {
     pub fn new() -> Self {
         unsafe {
             EEPROM_DEVICE = device_get_binding(b"eeprom1\0".as_ptr() as *const c_char);
-            if EEPROM_DEVICE.is_null() {                
+            if EEPROM_DEVICE.is_null() {
                 panic!("Failed to initialize EEPROM.");
             }
         }
         EepromInt { _private: () }
     }
 
-    pub fn read(&self, offset: off_t, data: &mut [u8]) -> Result<(), c_int> {
+    pub fn read<T: Copy>(&self, offset: Offt) -> Result<T, c_int> {
         unsafe {
             if EEPROM_DEVICE.is_null() {
                 return Err(-1);
             }
 
+            let mut buffer = vec![0u8; mem::size_of::<T>()];
             let result = eeprom_read(
                 EEPROM_DEVICE,
                 offset,
-                data.as_mut_ptr() as *mut c_void,
-                data.len(),
+                buffer.as_mut_ptr() as *mut c_void,
+                buffer.len(),
             );
 
             if result == 0 {
-                Ok(())
+                // Türün boyutuna uygun baytları oku ve T türüne dönüştür
+                let value = ptr::read(buffer.as_ptr() as *const T);
+                Ok(value)
             } else {
                 Err(result)
             }
         }
     }
 
-    pub fn write(&self, offset: off_t, data: &[u8]) -> Result<(), c_int> {
+    pub fn write<T: Copy>(&self, offset: Offt, data: &T) -> Result<(), c_int> {
         unsafe {
             if EEPROM_DEVICE.is_null() {
                 return Err(-1);
             }
 
+            let bytes = slice::from_raw_parts(data as *const T as *const u8, mem::size_of::<T>());
             let result = eeprom_write(
                 EEPROM_DEVICE,
                 offset,
-                data.as_ptr() as *const c_void,
-                data.len(),
+                bytes.as_ptr() as *const c_void,
+                bytes.len(),
             );
 
             if result == 0 {
