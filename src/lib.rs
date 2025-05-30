@@ -35,6 +35,7 @@ use display_io::Display;
 use ds18b20_io::Ds18b20;
 use eeprom_int::EepromInt;
 use iwdt_io::Iwdt;
+use pin_io::Pin;
 use sogi_pll::sogi_pll::{pi_transfer, q15_div, spll_update, SogiPllState, Q15_SCALE};
 
 mod adc_io;
@@ -45,6 +46,7 @@ mod ds18b20_io;
 mod eeprom_int;
 mod encoder;
 mod iwdt_io;
+mod pin_io;
 mod sogi_pll;
 mod usage;
 
@@ -73,6 +75,19 @@ static SET_THETA: AtomicI32 = AtomicI32::new(0);
 static BL_TIMEOUT: AtomicI32 = AtomicI32::new(0);
 static SET_MODE: AtomicBool = AtomicBool::new(true);
 
+static mut GLOBAL_PIN: Option<Pin> = None;
+
+pub unsafe fn init_pin() {
+    GLOBAL_PIN = Some(Pin::new());
+}
+
+pub unsafe fn get_pin() -> &'static Pin {
+    match &GLOBAL_PIN {
+        Some(pin) => pin,
+        None => panic!("Pin is not initialized!"),
+    }
+}
+
 fn adc_callback(idx: usize, value: i16) {
     if idx == 0 {
         critical_section::with(|cs| {
@@ -82,12 +97,20 @@ fn adc_callback(idx: usize, value: i16) {
                     spll_update(value as i32 * Q15_SCALE as i32, &mut state);
                     let theta: i32 = state.get_half_theta();
                     let set_theta: i32 = SET_THETA.load(Ordering::Relaxed);
-                    if !state.get_lock() {
-                        // pin LOW
-                    } else if theta > set_theta {
-                        // pin HIGH
-                    } else if theta > MAX_PULSE_DEGREE || theta < set_theta {
-                        // pin LOW
+                    {
+                        unsafe {
+                            let pin = get_pin();
+                            if !state.get_lock() {
+                                // pin LOW
+                                pin.set(false);
+                            } else if theta > set_theta {
+                                // pin HIGH
+                                pin.set(true);
+                            } else if theta > MAX_PULSE_DEGREE || theta < set_theta {
+                                // pin LOW
+                                pin.set(false);
+                            }
+                        }
                     }
                     if let Some(dac_ref) = DAC_STATE_REF.borrow(cs).get() {
                         let dac = dac_ref.lock().unwrap();
@@ -312,6 +335,10 @@ extern "C" fn rust_main() {
     let _ = usage::set_logger();
 
     log::info!("Restart!!!\r\n");
+
+    unsafe {
+        init_pin();
+    }
 
     let sogi_state = SOGI_STATE.init(Mutex::new(SogiPllState::new()));
     critical_section::with(|cs| {

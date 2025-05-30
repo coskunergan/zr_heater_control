@@ -45,7 +45,7 @@
 			label = "buzzer pin";
 		};		
 		led_green: led_green {
-			gpios = <&gpioe 5 (GPIO_ACTIVE_HIGH)>;
+			gpios = <&gpioa 5 (GPIO_ACTIVE_HIGH)>;
 			label = "test pin";
 		};	
 		button: button {
