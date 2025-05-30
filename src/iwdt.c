@@ -6,8 +6,7 @@
 #include <zephyr/devicetree.h>
 #include <zephyr/drivers/watchdog.h>
 
-const struct device *const wdt = DEVICE_DT_GET(DT_ALIAS(watchdog0));
-//const struct device *const wdt = DEVICE_DT_GET_OR_NULL(DT_ALIAS(watchdog0));
+const struct device *const wdt = DEVICE_DT_GET_OR_NULL(DT_ALIAS(watchdog0));
 int wdt_channel_id;
 
 int iwdt_init(uint32_t timeout)

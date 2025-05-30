@@ -53,7 +53,7 @@ const ENCODER_STEP: i32 = (0.1 * 32768.0) as i32;
 const ENCODER_MAX: i32 = (45.0 * 32768.0) as i32;
 const ENCODER_MIN: i32 = (10.0 * 32768.0) as i32;
 const BL_TIMEOUT_SEC: i32 = 5;
-const VERSION_MSG: &str = "Coskun ERGAN        V1.0";
+const VERSION_MSG: &str = "\r Coskun ERGAN \nVersion: 2.0  \r";
 
 static EXECUTOR_MAIN: StaticCell<Executor> = StaticCell::new();
 
@@ -200,6 +200,7 @@ async fn display_task(spawner: Spawner) {
             let encoder = ENCODER_COUNT.load(Ordering::Relaxed) / ENCODER_STEP;
             let msg = format!(
                 "ISI: {:04.1}  %{:02}  SET:{}{:02}.{:1}{} {}{:02}",
+                //"\rISI: {:04.1} %{:02}\nSET:{}{:02}.{:1}{}{}{:02} ",
                 MEASURE_VALUE.load(Ordering::Relaxed) as f32 / 32768.0,
                 (100 - (q15_div(
                     100 * 32768,
@@ -255,10 +256,17 @@ async fn control_task(spawner: Spawner, iwdt: Iwdt) {
 
     let eeprom = EepromInt::new();
 
+    // let test_value = 35 *32768;
+    // match eeprom.write(0, &test_value) {
+    //     Ok(()) => log::info!("Eeprom data was write succesfly {:?}", test_value),
+    //     Err(e) => log::info!("Eeprom data write failure! error: {}", e),
+    // };
+
     let mut eeprom_value: i32 = match eeprom.read(0) {
         Ok(value) => value,
         Err(_) => 0,
     };
+
 
     if eeprom_value < ENCODER_MIN || eeprom_value > ENCODER_MAX {
         eeprom_value = (ENCODER_MAX - ENCODER_MIN) / 2; // default

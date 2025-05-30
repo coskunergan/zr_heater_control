@@ -13,6 +13,7 @@
             "configFiles": [
                 "interface/stlink.cfg",
                 "target/stm32f2x.cfg"
+				//"target/stm32l1x_dual_bank.cfg"
             ],
             "searchDir": [
                 "/usr/share/openocd/scripts"

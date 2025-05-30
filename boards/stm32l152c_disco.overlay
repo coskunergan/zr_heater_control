@@ -1,107 +1,76 @@
-#include "nucleo_f207zg.dtsi"
-
-&i2c3 {
-	pinctrl-0 = <&i2c3_scl_pa8 &i2c3_sda_pc9>;
-	pinctrl-names = "default";
-	status = "okay";
-	aux_display_gpio: pcf8574@27 {
-		compatible = "nxp,pcf857x";
-		reg = <0x27>;
-		gpio-controller;
-		ngpios = <8>;
-		#gpio-cells = <2>;
-	};
-};
+#include "stm32l152c_disco.dtsi"
 
 / {
-	gpios {		
-		compatible = "gpio-leds";	
+	gpios {
+		compatible = "gpio-leds";
 		lcd_bl: lcd_bl {			
-			gpios = <&gpioe 0 GPIO_ACTIVE_LOW>;	
+			gpios = <&gpiob 0 GPIO_ACTIVE_LOW>;	
 			label = "buzzer lcd_bl";
 		};
 		lcd_enb: lcd_enb {			
-			gpios = <&gpioe 13 GPIO_ACTIVE_LOW>;
+			gpios = <&gpiob 13 GPIO_ACTIVE_LOW>;
 			label = "buzzer lcd_enb";
 		};
 		lcd_rst: lcd_rst {			
-			gpios = <&gpioe 5 GPIO_ACTIVE_LOW>;
+			gpios = <&gpioc 5 GPIO_ACTIVE_LOW>;
 			label = "buzzer lcd_rst";
 		};		
 		lcd_cmd: lcd_cmd {			
-			gpios = <&gpioe 1 GPIO_ACTIVE_HIGH>;
+			gpios = <&gpiob 1 GPIO_ACTIVE_HIGH>;
 			label = "buzzer lcd_cmd";
 		};		
 		lcd_dta: lcd_dta {			
-			gpios = <&gpioe 14 GPIO_ACTIVE_HIGH>;
+			gpios = <&gpiob 14 GPIO_ACTIVE_HIGH>;
 			label = "buzzer lcd_dta";
 		};		
 		lcd_clk: lcd_clk {			
-			gpios = <&gpioe 2 GPIO_ACTIVE_HIGH>;
+			gpios = <&gpiob 2 GPIO_ACTIVE_HIGH>;
 			label = "buzzer lcd_clk";
 		};			
 		buzzer: buzzer {
-			gpios = <&gpioe 11 GPIO_ACTIVE_LOW>;
+			gpios = <&gpioa 11 GPIO_ACTIVE_LOW>;
 			label = "buzzer pin";
 		};		
-		led_green: led_green {
-			gpios = <&gpioe 5 (GPIO_ACTIVE_HIGH)>;
-			label = "test pin";
-		};	
 		button: button {
 			gpios = <&gpioc 13 (GPIO_PULL_DOWN | GPIO_ACTIVE_LOW)>;
 			label = "Button";
 		};
 		encoder_a: encoder_a {
-			gpios = <&gpioa 0 (GPIO_PULL_UP | GPIO_ACTIVE_LOW)>;
+			gpios = <&gpiob 4 (GPIO_PULL_UP | GPIO_ACTIVE_LOW)>;
 			label = "Encoder A";
 		};
 		encoder_b: encoder_b {
-			gpios = <&gpioa 1 (GPIO_PULL_UP | GPIO_ACTIVE_LOW)>;
+			gpios = <&gpiob 5 (GPIO_PULL_UP | GPIO_ACTIVE_LOW)>;
 			label = "Encoder B";
-		};											
-	};		
+		};	
+		pulse_pin: pulse_pin {						
+			gpios = <&gpioc 7 GPIO_ACTIVE_HIGH>;
+			label = "Pulse pin";
+		};										
+	};	
 	zephyr,user {
-		/* adjust channel number according to pinmux in board.dts */
 		io-channels = <&adc1 10>;
 		io-channel-names = "ADC_IN";
 
 		dac = <&dac1>;
-		dac-channel-id = <1>;
+		dac-channel-id = <2>;
 		dac-resolution = <12>;			
 	};		
-	auxdisplay_0: hd44780 {
-		compatible = "hit,hd44780";
-		columns = <16>;
-		rows = <2>;
-		mode = <4>;
-		boot-delay-ms = <100>;
-		register-select-gpios = <&aux_display_gpio 0 (GPIO_ACTIVE_HIGH)>;
-		read-write-gpios    = <&aux_display_gpio 1 (GPIO_ACTIVE_HIGH)>;
-		enable-gpios        = <&aux_display_gpio 2 (GPIO_ACTIVE_HIGH)>;
-		backlight-gpios     = <&aux_display_gpio 3 (GPIO_ACTIVE_HIGH)>;
-		data-bus-gpios      = <0>, <0>, <0>, <0>,
-				<&aux_display_gpio 4 (GPIO_ACTIVE_HIGH)>,
-				<&aux_display_gpio 5 (GPIO_ACTIVE_HIGH)>,
-				<&aux_display_gpio 6 (GPIO_ACTIVE_HIGH)>,
-				<&aux_display_gpio 7 (GPIO_ACTIVE_HIGH)>;
-	};	
 	eeprom1: eeprom1 {
 		status = "okay";
 		compatible = "zephyr,emu-eeprom";
 		size = <DT_SIZE_K(4)>;
 		pagesize = <DT_SIZE_K(8)>;
 	 	partition = <&eepromemu_partition>;
-	 	rambuf;
-	};
-
-	aliases {		
+		rambuf;
+	};	
+	aliases {
 		eeprom-1 = &eeprom1;
 		watchdog0 = &iwdg;
-	};		
+	};	
 };
 
- &flash0 {
+&flash0 {
 	partitions {
 		compatible = "fixed-partitions";
 		#address-cells = <1>;
@@ -145,4 +114,8 @@
 
 &wwdg {
 	status = "disabled";
+};
+
+&eeprom {
+	status = "okay";
 };

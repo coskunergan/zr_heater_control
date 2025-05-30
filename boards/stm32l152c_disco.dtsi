@@ -1,6 +1,6 @@
+
 &usart3 {
 	status = "okay";
-
 	w1_0: w1-zephyr-serial-0 {
 		compatible = "zephyr,w1-serial";
 		#address-cells = <1>;
@@ -17,14 +17,14 @@
 };
 
 &adc1 {
-	pinctrl-0 = <&adc1_in10_pc0>;
+	pinctrl-0 = <&adc_in10_pc0>;
 	pinctrl-names = "default";
-	st,adc-prescaler = <2>;
+	st,adc-prescaler = <1>;
 	status = "okay";
 };
 
 &dac1 {
- 	pinctrl-0 = <&dac_out1_pa4>;
+ 	pinctrl-0 = <&dac_out2_pa5>;
  	pinctrl-names = "default";	
  	status = "okay";
 };

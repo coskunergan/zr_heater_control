@@ -6,7 +6,7 @@
    },
 "bsp": {
    //"board": "stm32f4_disco",
-   //"board": "stm32l1_disco",
+   //"board": "stm32l152c_disco",
    //"board": "qmu_cortex_m3",
    "board": "nucleo_f207zg",   
    //"board": "nucleo_f072rb",   
