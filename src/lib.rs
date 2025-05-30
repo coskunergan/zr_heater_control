@@ -267,7 +267,6 @@ async fn control_task(spawner: Spawner, iwdt: Iwdt) {
         Err(_) => 0,
     };
 
-
     if eeprom_value < ENCODER_MIN || eeprom_value > ENCODER_MAX {
         eeprom_value = (ENCODER_MAX - ENCODER_MIN) / 2; // default
     }
@@ -282,13 +281,8 @@ async fn control_task(spawner: Spawner, iwdt: Iwdt) {
         //---------------------------------------------
         let set_value: i32 = ENCODER_COUNT.load(Ordering::Relaxed);
         //---------------------------------------------
-        if sensor.read(&mut measure_value) == 0 {
-            log::info!("Sensor Value: {}\n\0", (measure_value as f32 / 32768.0));
-        // TEST
-        } else {
-            measure_value = 999 * 3276;
-            log::info!("Sensor read ERROR!\n\0");
-        }
+        sensor.read(&mut measure_value);
+        log::info!("Sensor Value: {}\n\0", (measure_value as f32 / 32768.0));
         MEASURE_VALUE.store(measure_value, Ordering::Relaxed);
         //---------------------------------------------
         let set_degree: i32 = pi_transfer(measure_value - set_value as i32, &mut pid);
