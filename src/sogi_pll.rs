@@ -9,7 +9,7 @@ pub mod sogi_pll {
     pub const Q15_SHIFT: i32 = 15;
     pub const Q15_SCALE: f32 = (1 << Q15_SHIFT) as f32;
     pub const TWO_PI: f32 = consts::PI * 2.0;
-    pub const SAMPLE_FREQ: f32 = 3500.0;
+    pub const SAMPLE_FREQ: f32 = 5000.0;
     pub const TARGET_FREQ: f32 = 50.0;
     pub const TARGET_FREQ_RANGE: f32 = 15.0;
     pub const PI_Q15: i32 = (consts::PI * Q15_SCALE) as i32;
@@ -17,11 +17,9 @@ pub mod sogi_pll {
     pub const T_Q15: i32 = ((1.0 / SAMPLE_FREQ as f32) * Q15_SCALE) as i32;
     pub const INPUT_MAX: i32 = 4095;
     pub const INPUT_MIN: i32 = 0;
-    pub const T: f32 = 1.0 / SAMPLE_FREQ as f32;
-    pub const N_SAMPLE: usize = (1.0 / T / TARGET_FREQ) as usize;
-    pub const PID_KP_FLOAT: f32 = 150.0;
-    pub const PID_KI_FLOAT: f32 = 15.0;
-    pub const PID_KC_FLOAT: f32 = 10.0;
+    pub const PID_KP_FLOAT: f32 = 160.0;
+    pub const PID_KI_FLOAT: f32 = 6.3;
+    pub const PID_KC_FLOAT: f32 = 1.414;
     pub const OFFSET_STEP_COEFF: i32 = (1e4) as i32;
     pub const SOGI_K_FLOAT: f32 = 1.4142135623730951;
     pub const ANGLE_TO_RAD_SCALE: f32 = 360.0 / TWO_PI;
@@ -76,7 +74,6 @@ pub mod sogi_pll {
     #[derive(Clone, Copy)]
     pub struct SogiPllState {
         pub pid: PidState,
-        pub launch_loop: bool,
         pub sample_index: u16,
         pub omega: i32,
         pub cur_phase: i32,
@@ -100,7 +97,6 @@ pub mod sogi_pll {
                     i_min: PID_I_MIN,
                     i_max: PID_I_MAX,
                 },
-                launch_loop: false,
                 sample_index: 0,
                 omega: INITIAL_OMEGA,
                 cur_phase: 0,
@@ -116,7 +112,6 @@ pub mod sogi_pll {
         pub fn reset(&mut self) {
             self.pid.i_sum = 0;
             self.pid.sat_err = 0;
-            self.launch_loop = false;
             self.sample_index = 0;
             self.omega = INITIAL_OMEGA;
             self.cur_phase = 0;
@@ -128,7 +123,7 @@ pub mod sogi_pll {
         }
 
         pub fn is_lock(&self, th: i32) -> bool {
-            self.launch_loop && self.last_error.abs() < th
+            self.last_error.abs() < th
         }
 
         pub fn get_freq(&self) -> u8 {
@@ -147,7 +142,7 @@ pub mod sogi_pll {
         }
 
         pub fn get_lock(&self) -> bool {
-            self.is_lock((50e-3 * Q15_SCALE) as i32)
+            self.is_lock((45e-3 * Q15_SCALE) as i32)
         }
     }
 
@@ -222,15 +217,6 @@ pub mod sogi_pll {
             );
             q15_sub(val, mid)
         };
-
-        state.sample_index = state.sample_index.wrapping_add(1);
-
-        if state.sample_index < N_SAMPLE as u16 {
-            state.launch_loop = false;
-            return;
-        } else {
-            state.launch_loop = true;
-        }
 
         let denom = q15_sub(state.auto_offset_max, state.auto_offset_min).max(DEFAULT_DENOM);
         let v = q15_div(v_org, denom);

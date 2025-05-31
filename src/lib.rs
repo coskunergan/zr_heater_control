@@ -50,7 +50,8 @@ mod pin_io;
 mod sogi_pll;
 mod usage;
 
-const MAX_PULSE_DEGREE: i32 = 177 * 32768;
+const MAX_PULSE_DEGREE: i32 = 165 * 32768;
+const SET_MAX_PULSE_DEGREE: i32 = 160 * 32768;
 const ENCODER_STEP: i32 = (0.1 * 32768.0) as i32;
 const ENCODER_MAX: i32 = (45.0 * 32768.0) as i32;
 const ENCODER_MIN: i32 = (10.0 * 32768.0) as i32;
@@ -67,7 +68,6 @@ static DAC_STATE_REF: CriticalMutex<OnceCell<&'static Mutex<Dac>>> =
     CriticalMutex::new(OnceCell::new());
 
 pub static BUTTON_SIGNAL: Signal<CriticalSectionRawMutex, bool> = Signal::new();
-pub static ENCODER_SIGNAL: Signal<CriticalSectionRawMutex, bool> = Signal::new();
 pub static DISPLAY_SIGNAL: Signal<CriticalSectionRawMutex, bool> = Signal::new();
 static MEASURE_VALUE: AtomicI32 = AtomicI32::new(0);
 static ENCODER_COUNT: AtomicI32 = AtomicI32::new(0);
@@ -93,31 +93,26 @@ fn adc_callback(idx: usize, value: i16) {
         critical_section::with(|cs| {
             if let Some(state_ref) = SOGI_STATE_REF.borrow(cs).get() {
                 let mut state = state_ref.lock().unwrap();
-                state.duration_ns = usage::measure_function_duration_ns(|| {
-                    spll_update(value as i32 * Q15_SCALE as i32, &mut state);
-                    let theta: i32 = state.get_half_theta();
-                    let set_theta: i32 = SET_THETA.load(Ordering::Relaxed);
-                    {
-                        unsafe {
-                            let pin = get_pin();
-                            if !state.get_lock() {
-                                // pin LOW
-                                pin.set(false);
-                            } else if theta > set_theta {
-                                // pin HIGH
-                                pin.set(true);
-                            } else if theta > MAX_PULSE_DEGREE || theta < set_theta {
-                                // pin LOW
-                                pin.set(false);
-                            }
+                //state.duration_ns = usage::measure_function_duration_ns(|| {
+                spll_update(value as i32 * Q15_SCALE as i32, &mut state);
+                let theta: i32 = state.get_half_theta();
+                let set_theta: i32 = SET_THETA.load(Ordering::Relaxed);
+                {
+                    unsafe {
+                        let pin = get_pin();
+                        if theta > MAX_PULSE_DEGREE || SET_MAX_PULSE_DEGREE == set_theta {
+                            pin.set(false);
+                        } else if theta > set_theta {
+                            pin.set(true);
                         }
                     }
-                    if let Some(dac_ref) = DAC_STATE_REF.borrow(cs).get() {
-                        let dac = dac_ref.lock().unwrap();
-                        let dac_value = (((theta / 32768) * 4096) / 180).clamp(0, 4095) as u32;
-                        dac.write(dac_value);
-                    }
-                }) as u32;
+                }
+                // if let Some(dac_ref) = DAC_STATE_REF.borrow(cs).get() {
+                //     let dac = dac_ref.lock().unwrap();
+                //     let dac_value = (((theta / 32768) * 4096) / 180).clamp(0, 4095) as u32;
+                //     dac.write(dac_value);
+                // }
+                //}) as u32;
             }
         });
     }
@@ -126,17 +121,17 @@ fn adc_callback(idx: usize, value: i16) {
 #[embassy_executor::task]
 async fn display_task(spawner: Spawner) {
     let display = Display::new();
-    let mut cur_phase: i32 = 0;
-    let mut omega: i32 = 0;
-    let mut auto_offset_min: i32 = 0;
-    let mut auto_offset_max: i32 = 0;
-    let mut sogi_s1: i32 = 0;
-    let mut sogi_s2: i32 = 0;
-    let mut last_error: i32 = 0;
-    let mut duration_ns: u32 = 0;
+    // let mut cur_phase: i32 = 0;
+    // let mut omega: i32 = 0;
+    // let mut auto_offset_min: i32 = 0;
+    // let mut auto_offset_max: i32 = 0;
+    // let mut sogi_s1: i32 = 0;
+    // let mut sogi_s2: i32 = 0;
+    // let mut last_error: i32 = 0;
+    // let mut duration_ns: u32 = 0;
     let mut lock: bool = false;
     let mut freq: u8 = 0;
-    let mut theta: i32 = 0;
+    // let mut theta: i32 = 0;
 
     let gpio_token = Arc::new(Mutex::new(unsafe { GpioToken::get_instance().unwrap() }));
     let button = zephyr::devicetree::labels::button::get_instance().unwrap();
@@ -174,7 +169,6 @@ async fn display_task(spawner: Spawner) {
                         value -= ENCODER_STEP;
                     }
                     ENCODER_COUNT.store(value, Ordering::Relaxed);
-                    ENCODER_SIGNAL.signal(clockwise);
                     DISPLAY_SIGNAL.signal(true);
                 }
                 BL_TIMEOUT.store(BL_TIMEOUT_SEC * 2, Ordering::Relaxed);
@@ -204,17 +198,17 @@ async fn display_task(spawner: Spawner) {
         critical_section::with(|cs| {
             let state_ref = SOGI_STATE_REF.borrow(cs).get().unwrap();
             let state = state_ref.lock().unwrap();
-            cur_phase = state.cur_phase;
-            omega = state.omega;
-            auto_offset_min = state.auto_offset_min;
-            auto_offset_max = state.auto_offset_max;
-            sogi_s1 = state.sogi_s1;
-            sogi_s2 = state.sogi_s2;
-            last_error = state.last_error;
-            duration_ns = state.duration_ns;
+            // cur_phase = state.cur_phase;
+            // omega = state.omega;
+            // auto_offset_min = state.auto_offset_min;
+            // auto_offset_max = state.auto_offset_max;
+            // sogi_s1 = state.sogi_s1;
+            // sogi_s2 = state.sogi_s2;
+            // last_error = state.last_error;
+            //duration_ns = state.duration_ns;
             lock = state.get_lock();
             freq = state.get_freq();
-            theta = state.get_half_theta();
+            //theta = state.get_half_theta();
         });
 
         {
@@ -227,7 +221,7 @@ async fn display_task(spawner: Spawner) {
                 MEASURE_VALUE.load(Ordering::Relaxed) as f32 / 32768.0,
                 (100 - (q15_div(
                     100 * 32768,
-                    q15_div(MAX_PULSE_DEGREE, SET_THETA.load(Ordering::Relaxed))
+                    q15_div(SET_MAX_PULSE_DEGREE, SET_THETA.load(Ordering::Relaxed))
                 )) / 32768)
                     .clamp(0, 99),
                 if mode { '>' } else { ' ' },
@@ -241,22 +235,22 @@ async fn display_task(spawner: Spawner) {
         }
 
         //log::info!(
-        zephyr::printk!(
-                ">SENSOR:{}, ENC:{}, OFFSET_MAX:{:.3}, OFFSET_MIN:{:.3}, OMEGA:{:.3}, THETA:{:.3}, S1:{:.3}, S2:{:.3}, ERR:{:.3}, FREQ:{:.3}, D_TIME:{}\n\0",
-                MEASURE_VALUE.load(Ordering::Relaxed),
-                ENCODER_COUNT.load(Ordering::Relaxed),
-                auto_offset_min,
-                auto_offset_max,
-                omega,
-                theta,
-                sogi_s1,
-                sogi_s2,
-                last_error,
-                freq,
-                (duration_ns as f32 / 1e3)
-            );
+        // zephyr::printk!(
+        //         ">SENSOR:{}, ENC:{}, OFFSET_MAX:{:.3}, OFFSET_MIN:{:.3}, OMEGA:{:.3}, THETA:{:.3}, S1:{:.3}, S2:{:.3}, ERR:{:.3}, FREQ:{:.3}, D_TIME:{}\n\0",
+        //         MEASURE_VALUE.load(Ordering::Relaxed),
+        //         ENCODER_COUNT.load(Ordering::Relaxed),
+        //         auto_offset_min,
+        //         auto_offset_max,
+        //         omega,
+        //         theta,
+        //         sogi_s1,
+        //         sogi_s2,
+        //         last_error,
+        //         freq,
+        //         (duration_ns as f32 / 1e3)
+        //     );
 
-        let _ = Timer::after(Duration::from_millis(50)).await;
+        let _ = Timer::after(Duration::from_millis(100)).await;
 
         DISPLAY_SIGNAL.wait().await;
     }
@@ -272,7 +266,7 @@ async fn control_task(spawner: Spawner, iwdt: Iwdt) {
         ki: 15 * 327,  // 0.15
         kc: 10 * 327,  // 0.1
         i_min: 0,
-        i_max: MAX_PULSE_DEGREE,
+        i_max: SET_MAX_PULSE_DEGREE,
     };
     let sensor = Ds18b20::new();
     let mut measure_value: i32 = 0;
@@ -308,9 +302,9 @@ async fn control_task(spawner: Spawner, iwdt: Iwdt) {
         log::info!("Sensor Value: {}\n\0", (measure_value as f32 / 32768.0));
         MEASURE_VALUE.store(measure_value, Ordering::Relaxed);
         //---------------------------------------------
-         let set_degree: i32 = pi_transfer(measure_value - set_value as i32, &mut pid);
+        let set_degree: i32 = pi_transfer(measure_value - set_value as i32, &mut pid);
         //---------------------------------------------
-        //let set_degree = 177 * 32768; // test
+        //let set_degree = 162 * 32768; // test
         SET_THETA.store(set_degree, Ordering::Release);
 
         DISPLAY_SIGNAL.signal(true);
