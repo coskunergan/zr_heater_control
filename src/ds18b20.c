@@ -19,8 +19,8 @@ int32_t min_max_filter(int32_t val)
 {
     static int32_t measure_value_arr[5] = {-99, 99, -99, 99, -99};
     static uint8_t index = 0;
-    uint8_t min_index;
-    uint8_t max_index;
+    uint8_t min_index = 0;
+    uint8_t max_index = 0;
     uint8_t catch_index = 0x1F;
     uint8_t i, j;
     int32_t temp_min;
@@ -91,7 +91,7 @@ void sensor_work_handler(struct k_work *work)
         else if(measure < (999 * 3276))
         {
             measure += 32768;
-            measure = min_max_filter(measure);            
+            measure = min_max_filter(measure);
         }
         status = rc;
     }

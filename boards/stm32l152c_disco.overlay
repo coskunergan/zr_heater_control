@@ -32,7 +32,7 @@
 			label = "buzzer pin";
 		};		
 		button: button {
-			gpios = <&gpioc 13 (GPIO_PULL_DOWN | GPIO_ACTIVE_LOW)>;
+			gpios = <&gpioa 0 (GPIO_PULL_UP | GPIO_ACTIVE_LOW)>;
 			label = "Button";
 		};
 		encoder_a: encoder_a {
