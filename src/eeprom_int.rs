@@ -20,8 +20,8 @@ pub struct EepromInt {
 impl EepromInt {
     pub fn new() -> Self {
         unsafe {
-            EEPROM_DEVICE = device_get_binding(b"eeprom1\0".as_ptr() as *const c_char);
-            //EEPROM_DEVICE = device_get_binding(b"eeprom@8080000\0".as_ptr() as *const c_char);
+            //EEPROM_DEVICE = device_get_binding(b"eeprom1\0".as_ptr() as *const c_char);
+            EEPROM_DEVICE = device_get_binding(b"eeprom@8080000\0".as_ptr() as *const c_char); // (convert-3)
             if EEPROM_DEVICE.is_null() {
                 panic!("Failed to initialize EEPROM.");
             }

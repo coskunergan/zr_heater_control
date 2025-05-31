@@ -11,7 +11,7 @@ static struct gpio_dt_spec pin_dt;
 int pin_init(/*const struct gpio_dt_spec pin*/)
 {
     //const struct device *dev = device_get_binding(label);
-    struct gpio_dt_spec pin = GPIO_DT_SPEC_GET_OR(DT_NODELABEL(led_green), gpios,
+    struct gpio_dt_spec pin = GPIO_DT_SPEC_GET_OR(DT_NODELABEL(pulse_pin), gpios,
                                     {
                                         0
                                     });

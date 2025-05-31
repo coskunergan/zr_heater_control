@@ -9,7 +9,7 @@ pub mod sogi_pll {
     pub const Q15_SHIFT: i32 = 15;
     pub const Q15_SCALE: f32 = (1 << Q15_SHIFT) as f32;
     pub const TWO_PI: f32 = consts::PI * 2.0;
-    pub const SAMPLE_FREQ: f32 = 2500.0;
+    pub const SAMPLE_FREQ: f32 = 3500.0;
     pub const TARGET_FREQ: f32 = 50.0;
     pub const TARGET_FREQ_RANGE: f32 = 15.0;
     pub const PI_Q15: i32 = (consts::PI * Q15_SCALE) as i32;
@@ -135,7 +135,7 @@ pub mod sogi_pll {
             (q15_div(self.omega, TAU_Q15) / Q15_SCALE as i32).clamp(
                 (TARGET_FREQ - TARGET_FREQ_RANGE) as i32,
                 (TARGET_FREQ + TARGET_FREQ_RANGE) as i32,
-            ) as u8
+            ) as u8 - 4
         }
         #[allow(dead_code)]
         pub fn get_theta(&self) -> i32 {
@@ -143,16 +143,11 @@ pub mod sogi_pll {
         }
         #[allow(dead_code)]
         pub fn get_half_theta(&self) -> i32 {
-            let res = q15_mul(self.cur_phase, THETA_SCALE);
-            if res >= (180 * 32768) {
-                res - (180 * 32768)
-            } else {
-                res
-            }
+            q15_add(q15_mul(q15_div(self.cur_phase, PI_Q15), 180 * 32768), 90 * 32768) % (180 * 32768)
         }
 
         pub fn get_lock(&self) -> bool {
-            self.is_lock((30e-3 * Q15_SCALE) as i32)
+            self.is_lock((50e-3 * Q15_SCALE) as i32)
         }
     }
 

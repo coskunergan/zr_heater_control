@@ -36,11 +36,11 @@
 			label = "Button";
 		};
 		encoder_a: encoder_a {
-			gpios = <&gpiob 4 (GPIO_PULL_UP | GPIO_ACTIVE_LOW)>;
+			gpios = <&gpiob 5 (GPIO_PULL_UP | GPIO_ACTIVE_LOW)>;
 			label = "Encoder A";
 		};
 		encoder_b: encoder_b {
-			gpios = <&gpiob 5 (GPIO_PULL_UP | GPIO_ACTIVE_LOW)>;
+			gpios = <&gpiob 4 (GPIO_PULL_UP | GPIO_ACTIVE_LOW)>;
 			label = "Encoder B";
 		};	
 		pulse_pin: pulse_pin {						

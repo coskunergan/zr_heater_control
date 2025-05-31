@@ -11,7 +11,7 @@
 
 LOG_MODULE_REGISTER(auxdisplay, LOG_LEVEL_DBG);
 
-#define AUX_DISPLAY
+//#define AUX_DISPLAY (convert-1)
 
 #ifdef AUX_DISPLAY
 static const struct device *const display_dev = DEVICE_DT_GET_OR_NULL(DT_NODELABEL(auxdisplay_0));

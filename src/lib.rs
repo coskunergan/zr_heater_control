@@ -50,7 +50,7 @@ mod pin_io;
 mod sogi_pll;
 mod usage;
 
-const MAX_PULSE_DEGREE: i32 = 170 * 32768;
+const MAX_PULSE_DEGREE: i32 = 177 * 32768;
 const ENCODER_STEP: i32 = (0.1 * 32768.0) as i32;
 const ENCODER_MAX: i32 = (45.0 * 32768.0) as i32;
 const ENCODER_MIN: i32 = (10.0 * 32768.0) as i32;
@@ -114,7 +114,7 @@ fn adc_callback(idx: usize, value: i16) {
                     }
                     if let Some(dac_ref) = DAC_STATE_REF.borrow(cs).get() {
                         let dac = dac_ref.lock().unwrap();
-                        let dac_value = (((theta * 4096) / 32768) / 180).clamp(0, 4095) as u32;
+                        let dac_value = (((theta / 32768) * 4096) / 180).clamp(0, 4095) as u32;
                         dac.write(dac_value);
                     }
                 }) as u32;
@@ -222,8 +222,8 @@ async fn display_task(spawner: Spawner) {
             display.clear();
             let encoder = ENCODER_COUNT.load(Ordering::Relaxed) / ENCODER_STEP;
             let msg = format!(
-                "ISI: {:04.1}  %{:02}  SET:{}{:02}.{:1}{} {}{:02}",
-                //"\rISI: {:04.1} %{:02}\nSET:{}{:02}.{:1}{}{}{:02} ",
+                //"ISI: {:04.1}  %{:02}  SET:{}{:02}.{:1}{} {}{:02}",
+                "\rISI: {:04.1} %{:02}\nSET:{}{:02}.{:1}{}{}{:02} ", //(convert-2)
                 MEASURE_VALUE.load(Ordering::Relaxed) as f32 / 32768.0,
                 (100 - (q15_div(
                     100 * 32768,
@@ -308,8 +308,9 @@ async fn control_task(spawner: Spawner, iwdt: Iwdt) {
         log::info!("Sensor Value: {}\n\0", (measure_value as f32 / 32768.0));
         MEASURE_VALUE.store(measure_value, Ordering::Relaxed);
         //---------------------------------------------
-        let set_degree: i32 = pi_transfer(measure_value - set_value as i32, &mut pid);
+         let set_degree: i32 = pi_transfer(measure_value - set_value as i32, &mut pid);
         //---------------------------------------------
+        //let set_degree = 177 * 32768; // test
         SET_THETA.store(set_degree, Ordering::Release);
 
         DISPLAY_SIGNAL.signal(true);
