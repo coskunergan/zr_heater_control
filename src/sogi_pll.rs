@@ -82,6 +82,7 @@ pub mod sogi_pll {
         pub sogi_s1: i32,
         pub sogi_s2: i32,
         pub last_error: i32,
+        #[allow(dead_code)]
         pub duration_ns: u32,
     }
 

@@ -6,15 +6,13 @@ use embassy_time::{Duration, Timer};
 
 use alloc::boxed::Box;
 use zephyr::{
-    raw::GPIO_INPUT,
-    sync::{Arc, Mutex},
+    raw::ZR_GPIO_INPUT
 };
 
-use super::{GpioPin, GpioToken};
+use super::{GpioPin};
 use log::warn;
 
 pub struct Button {
-    token: Arc<Mutex<GpioToken>>,
     pin: GpioPin,
     callback: Box<dyn Fn() + Send + Sync + 'static>,
     debounce: Duration,
@@ -22,13 +20,11 @@ pub struct Button {
 
 impl Button {
     pub fn new(
-        token: Arc<Mutex<GpioToken>>,
         pin: GpioPin,
         callback: Box<dyn Fn() + Send + Sync + 'static>,
         debounce: Duration,
     ) -> Self {
         Self {
-            token,
             pin,
             callback,
             debounce,
@@ -44,25 +40,22 @@ impl Button {
     }
 
     pub async fn work(&mut self) {
-        let mut token_lock = self.token.lock().unwrap();
 
         if !self.pin.is_ready() {
             warn!("Button pin is not ready");
             loop {}
         }
 
-        unsafe {
-            self.pin.configure(&mut token_lock, GPIO_INPUT);
-        }
+        self.pin.configure(ZR_GPIO_INPUT);
 
         loop {
-            unsafe { self.pin.wait_for_high(&mut token_lock).await };
+            unsafe { self.pin.wait_for_high().await };
 
             (self.callback)();
 
             Timer::after(self.debounce).await;
 
-            unsafe { self.pin.wait_for_low(&mut token_lock).await };
+            unsafe { self.pin.wait_for_low().await };
 
             Timer::after(self.debounce).await;
         }
@@ -71,7 +64,7 @@ impl Button {
 
 #[macro_export]
 macro_rules! declare_buttons {
-    ($spawner:expr, $token:expr, [ $( ($pin:expr, $closure:expr, $debounce:expr) ),* ]) => {
+    ($spawner:expr, [ $( ($pin:expr, $closure:expr, $debounce:expr) ),* ]) => {
         {
             const BUTTON_COUNT: usize = 0 $( + { let _ = ($debounce); 1 } )*;
             log::info!("Declared button count: {}", BUTTON_COUNT);
@@ -85,7 +78,7 @@ macro_rules! declare_buttons {
                 use alloc::boxed::Box;
                 let pin = $pin;
                 let debounce = $debounce;
-                let button = $crate::button::Button::new($token.clone(), pin, Box::new($closure), debounce);
+                let button = $crate::button::Button::new(pin, Box::new($closure), debounce);
                 match $spawner.spawn(button_task(button)) {
                     Ok(_) => log::info!("Button task started."),
                     Err(e) => log::error!("Button task failure: {:?}", e),

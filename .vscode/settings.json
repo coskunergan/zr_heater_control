@@ -13,6 +13,6 @@
  },
  "app": {
    "name": "${config:workspaceFolder.AppUnderDev}",
-   "build_dir": "${workspaceFolder}\\build",
+   "build_dir": "${workspaceFolder}/build",
    }
 }

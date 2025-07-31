@@ -21,8 +21,8 @@ use embassy_executor::Spawner;
 use static_cell::StaticCell;
 
 use zephyr::{
-    device::gpio::{GpioPin, GpioToken},
-    sync::{Arc, Mutex},
+    device::gpio::{GpioPin},
+    sync::{Mutex},
 };
 
 use core::{sync::atomic::AtomicBool, sync::atomic::AtomicI32, sync::atomic::Ordering};
@@ -56,7 +56,7 @@ const ENCODER_STEP: i32 = (0.1 * 32768.0) as i32;
 const ENCODER_MAX: i32 = (45.0 * 32768.0) as i32;
 const ENCODER_MIN: i32 = (10.0 * 32768.0) as i32;
 const BL_TIMEOUT_SEC: i32 = 5;
-const VERSION_MSG: &str = "\r Coskun ERGAN \nVersion: 2.0  \r";
+const VERSION_MSG: &str = "\r Coskun ERGAN \nVersion: 2.1  \r";
 
 static EXECUTOR_MAIN: StaticCell<Executor> = StaticCell::new();
 
@@ -133,12 +133,10 @@ async fn display_task(spawner: Spawner) {
     let mut freq: u8 = 0;
     // let mut theta: i32 = 0;
 
-    let gpio_token = Arc::new(Mutex::new(unsafe { GpioToken::get_instance().unwrap() }));
     let button = zephyr::devicetree::labels::button::get_instance().unwrap();
 
     declare_buttons!(
         spawner,
-        gpio_token,
         [(
             button,
             || {
@@ -156,7 +154,6 @@ async fn display_task(spawner: Spawner) {
 
     declare_encoders!(
         spawner,
-        gpio_token,
         [(
             encoder_a,
             encoder_b,

@@ -20,7 +20,7 @@ impl Dac {
 
         Dac { _private: () }
     }
-
+    #[allow(dead_code)]
     pub fn write(&self, value: u32) {
         let ret = unsafe { dac_write(value) };
         if ret != 0 {
