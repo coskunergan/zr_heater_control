@@ -5,11 +5,9 @@
 use embassy_time::{Duration, Timer};
 
 use alloc::boxed::Box;
-use zephyr::{
-    raw::ZR_GPIO_INPUT,
-};
+use zephyr::raw::ZR_GPIO_INPUT;
 
-use super::{GpioPin};
+use super::GpioPin;
 use log::warn;
 
 pub struct Encoder {
@@ -35,7 +33,6 @@ impl Encoder {
     }
 
     pub async fn work(&mut self) {
-
         if !self.pin_a.is_ready() || !self.pin_b.is_ready() {
             warn!("Encoder pins is not ready");
             loop {}

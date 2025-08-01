@@ -20,33 +20,31 @@ use critical_section::Mutex as CriticalMutex;
 use embassy_executor::Spawner;
 use static_cell::StaticCell;
 
-use zephyr::{
-    device::gpio::{GpioPin},
-    sync::{Mutex},
-};
+use zephyr::{device::gpio::GpioPin, sync::Mutex};
 
 use core::{sync::atomic::AtomicBool, sync::atomic::AtomicI32, sync::atomic::Ordering};
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::signal::Signal;
 
+use pin::Pin;
 use adc_io::Adc;
 use dac_io::Dac;
 use display_io::Display;
 use ds18b20_io::Ds18b20;
 use eeprom_int::EepromInt;
 use iwdt_io::Iwdt;
-use pin_io::Pin;
 use sogi_pll::sogi_pll::{pi_transfer, q15_div, spll_update, SogiPllState, Q15_SCALE};
 
+mod pin;
 mod adc_io;
 mod button;
+mod buzzer;
 mod dac_io;
 mod display_io;
 mod ds18b20_io;
 mod eeprom_int;
 mod encoder;
 mod iwdt_io;
-mod pin_io;
 mod sogi_pll;
 mod usage;
 
@@ -74,20 +72,9 @@ static ENCODER_COUNT: AtomicI32 = AtomicI32::new(0);
 static SET_THETA: AtomicI32 = AtomicI32::new(0);
 static BL_TIMEOUT: AtomicI32 = AtomicI32::new(0);
 static SET_MODE: AtomicBool = AtomicBool::new(true);
-
-static mut GLOBAL_PIN: Option<Pin> = None;
-
-pub unsafe fn init_pin() {
-    GLOBAL_PIN = Some(Pin::new());
-}
-
-pub unsafe fn get_pin() -> &'static Pin {
-    match &GLOBAL_PIN {
-        Some(pin) => pin,
-        None => panic!("Pin is not initialized!"),
-    }
-}
-
+//====================================================================================
+//====================================================================================
+//====================================================================================
 fn adc_callback(idx: usize, value: i16) {
     if idx == 0 {
         critical_section::with(|cs| {
@@ -98,13 +85,11 @@ fn adc_callback(idx: usize, value: i16) {
                 let theta: i32 = state.get_half_theta();
                 let set_theta: i32 = SET_THETA.load(Ordering::Relaxed);
                 {
-                    unsafe {
-                        let pin = get_pin();
-                        if theta > MAX_PULSE_DEGREE || SET_MAX_PULSE_DEGREE == set_theta {
-                            pin.set(false);
-                        } else if theta > set_theta {
-                            pin.set(true);
-                        }
+                    let pulse_pin = Pin::get();
+                    if theta > MAX_PULSE_DEGREE || SET_MAX_PULSE_DEGREE == set_theta {
+                        pulse_pin.set(false);
+                    } else if theta > set_theta {
+                        pulse_pin.set(true);
                     }
                 }
                 // if let Some(dac_ref) = DAC_STATE_REF.borrow(cs).get() {
@@ -117,7 +102,7 @@ fn adc_callback(idx: usize, value: i16) {
         });
     }
 }
-
+//====================================================================================
 #[embassy_executor::task]
 async fn display_task(spawner: Spawner) {
     let display = Display::new();
@@ -132,6 +117,14 @@ async fn display_task(spawner: Spawner) {
     let mut lock: bool = false;
     let mut freq: u8 = 0;
     // let mut theta: i32 = 0;
+
+    let buzzer_pin = zephyr::devicetree::labels::buzzer::get_instance().unwrap();
+
+    let buzzer = declare_buzzer!(spawner, buzzer_pin, || {
+        zephyr::printk!("Buzzer Activated!\n");
+    });
+
+    buzzer.trigger(Duration::from_millis(500));
 
     let button = zephyr::devicetree::labels::button::get_instance().unwrap();
 
@@ -249,10 +242,12 @@ async fn display_task(spawner: Spawner) {
 
         let _ = Timer::after(Duration::from_millis(100)).await;
 
-        DISPLAY_SIGNAL.wait().await;
+        if DISPLAY_SIGNAL.wait().await == true {
+            buzzer.trigger(Duration::from_millis(10));
+        }
     }
 }
-
+//====================================================================================
 #[embassy_executor::task]
 async fn control_task(spawner: Spawner, iwdt: Iwdt) {
     let _ = spawner;
@@ -304,7 +299,7 @@ async fn control_task(spawner: Spawner, iwdt: Iwdt) {
         //let set_degree = 162 * 32768; // test
         SET_THETA.store(set_degree, Ordering::Release);
 
-        DISPLAY_SIGNAL.signal(true);
+        DISPLAY_SIGNAL.signal(false);
         //---------------------------------------------
         eeprom_value = match eeprom.read(0) {
             Ok(value) => value,
@@ -319,7 +314,7 @@ async fn control_task(spawner: Spawner, iwdt: Iwdt) {
         //---------------------------------------------
     }
 }
-
+//====================================================================================
 #[no_mangle]
 extern "C" fn rust_main() {
     let iwdt = Iwdt::new(8000);
@@ -328,9 +323,7 @@ extern "C" fn rust_main() {
 
     log::info!("Restart!!!\r\n");
 
-    unsafe {
-        init_pin();
-    }
+    Pin::init(zephyr::devicetree::labels::pulse_pin::get_instance().expect("pulse_pin not found!"));
 
     let sogi_state = SOGI_STATE.init(Mutex::new(SogiPllState::new()));
     critical_section::with(|cs| {
@@ -354,3 +347,6 @@ extern "C" fn rust_main() {
         spawner.spawn(control_task(spawner, iwdt)).unwrap();
     })
 }
+//====================================================================================
+//====================================================================================
+//====================================================================================

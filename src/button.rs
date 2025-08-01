@@ -5,11 +5,9 @@
 use embassy_time::{Duration, Timer};
 
 use alloc::boxed::Box;
-use zephyr::{
-    raw::ZR_GPIO_INPUT
-};
+use zephyr::raw::ZR_GPIO_INPUT;
 
-use super::{GpioPin};
+use super::GpioPin;
 use log::warn;
 
 pub struct Button {
@@ -40,7 +38,6 @@ impl Button {
     }
 
     pub async fn work(&mut self) {
-
         if !self.pin.is_ready() {
             warn!("Button pin is not ready");
             loop {}
