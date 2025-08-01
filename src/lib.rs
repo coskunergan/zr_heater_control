@@ -26,7 +26,8 @@ use core::{sync::atomic::AtomicBool, sync::atomic::AtomicI32, sync::atomic::Orde
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::signal::Signal;
 
-use pin::Pin;
+use pin::{GlobalPin, Pin};
+
 use adc_io::Adc;
 use dac_io::Dac;
 use display_io::Display;
@@ -35,7 +36,6 @@ use eeprom_int::EepromInt;
 use iwdt_io::Iwdt;
 use sogi_pll::sogi_pll::{pi_transfer, q15_div, spll_update, SogiPllState, Q15_SCALE};
 
-mod pin;
 mod adc_io;
 mod button;
 mod buzzer;
@@ -45,6 +45,7 @@ mod ds18b20_io;
 mod eeprom_int;
 mod encoder;
 mod iwdt_io;
+mod pin;
 mod sogi_pll;
 mod usage;
 
@@ -72,6 +73,8 @@ static ENCODER_COUNT: AtomicI32 = AtomicI32::new(0);
 static SET_THETA: AtomicI32 = AtomicI32::new(0);
 static BL_TIMEOUT: AtomicI32 = AtomicI32::new(0);
 static SET_MODE: AtomicBool = AtomicBool::new(true);
+
+static PULSE_PIN: GlobalPin = GlobalPin::new();
 //====================================================================================
 //====================================================================================
 //====================================================================================
@@ -85,7 +88,7 @@ fn adc_callback(idx: usize, value: i16) {
                 let theta: i32 = state.get_half_theta();
                 let set_theta: i32 = SET_THETA.load(Ordering::Relaxed);
                 {
-                    let pulse_pin = Pin::get();
+                    let pulse_pin = PULSE_PIN.get();
                     if theta > MAX_PULSE_DEGREE || SET_MAX_PULSE_DEGREE == set_theta {
                         pulse_pin.set(false);
                     } else if theta > set_theta {
@@ -159,8 +162,8 @@ async fn display_task(spawner: Spawner) {
                         value -= ENCODER_STEP;
                     }
                     ENCODER_COUNT.store(value, Ordering::Relaxed);
-                    DISPLAY_SIGNAL.signal(true);
                 }
+                DISPLAY_SIGNAL.signal(true);
                 BL_TIMEOUT.store(BL_TIMEOUT_SEC * 2, Ordering::Relaxed);
             },
             Duration::from_millis(1)
@@ -323,7 +326,9 @@ extern "C" fn rust_main() {
 
     log::info!("Restart!!!\r\n");
 
-    Pin::init(zephyr::devicetree::labels::pulse_pin::get_instance().expect("pulse_pin not found!"));
+    PULSE_PIN.init(Pin::new(
+        zephyr::devicetree::labels::pulse_pin::get_instance().expect("pulse_pin not found!"),
+    ));
 
     let sogi_state = SOGI_STATE.init(Mutex::new(SogiPllState::new()));
     critical_section::with(|cs| {

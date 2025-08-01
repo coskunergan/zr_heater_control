@@ -11,47 +11,33 @@ use alloc::boxed::Box;
 use alloc::sync::Arc;
 use zephyr::raw::ZR_GPIO_OUTPUT;
 
-use super::GpioPin;
+use super::{GpioPin, Pin};
 use log::warn;
 
 pub struct Buzzer {
-    pin: GpioPin,
+    pin: Pin,
     callback: Box<dyn Fn() + Send + Sync + 'static>,
 }
 
 impl Buzzer {
     pub fn new(pin: GpioPin, callback: Box<dyn Fn() + Send + Sync + 'static>) -> Self {
-        Self { pin, callback }
-    }
-
-    #[allow(dead_code)]
-    pub fn set_callback(&mut self, cb: Box<dyn Fn() + Send + Sync + 'static>) {
-        self.callback = cb;
-    }
-
-    #[allow(dead_code)]
-    pub fn trigger_callback(&self) {
-        (self.callback)();
+        let pin_instance = Pin::new(pin);
+        Self {
+            pin: pin_instance,
+            callback,
+        }
     }
 
     pub async fn trigger(&mut self, active_duration: Duration) {
-        if !self.pin.is_ready() {
-            warn!("Buzzer pin is not ready");
-            return;
-        }
-
-        self.pin.configure(ZR_GPIO_OUTPUT);
-
-        unsafe { self.pin.set(true) };
+        self.pin.set(true);
 
         (self.callback)();
 
         Timer::after(active_duration).await;
 
-        unsafe { self.pin.set(false) };
+        self.pin.set(false);
     }
 }
-
 
 #[derive(Clone)]
 pub struct BuzzerHandle {

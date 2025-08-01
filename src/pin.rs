@@ -5,51 +5,63 @@
 use super::GpioPin;
 use alloc::boxed::Box;
 use core::cell::UnsafeCell;
-use core::ptr::NonNull;
-use core::sync::atomic::{AtomicPtr,AtomicBool, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicPtr, Ordering};
 use zephyr::raw::ZR_GPIO_OUTPUT;
 
-static mut PIN_INSTANCE: AtomicPtr<Pin> = AtomicPtr::new(core::ptr::null_mut());
-static IS_INITIALIZED: AtomicBool = AtomicBool::new(false);
+pub struct GlobalPin {
+    instance: AtomicPtr<Pin>,
+    is_initialized: AtomicBool,
+}
+
+impl GlobalPin {
+    pub const fn new() -> Self {
+        GlobalPin {
+            instance: AtomicPtr::new(core::ptr::null_mut()),
+            is_initialized: AtomicBool::new(false),
+        }
+    }
+
+    pub fn init(&self, pin: Pin) {
+        if self.is_initialized.load(Ordering::Acquire) {
+            panic!("Pin already init.");
+        }
+
+        let pin_ptr = Box::into_raw(Box::new(pin));
+
+        unsafe {
+            self.instance.store(pin_ptr, Ordering::Release);
+            self.is_initialized.store(true, Ordering::Release);
+        }
+    }
+
+    #[inline(always)]
+    pub fn get(&self) -> &'static Pin {
+        if !self.is_initialized.load(Ordering::Acquire) {
+            panic!("Pin not init.");
+        }
+        unsafe { &*self.instance.load(Ordering::Relaxed) }
+    }
+}
+
 pub struct Pin {
     _private: (),
     gpio: UnsafeCell<GpioPin>,
 }
 
+unsafe impl Send for Pin {}
+unsafe impl Sync for Pin {}
+
 impl Pin {
-    pub fn init(mut pin: GpioPin) {
-        if IS_INITIALIZED.load(Ordering::Acquire) {
-            panic!("Pin zaten başlatıldı.");
+    pub fn new(mut pin: GpioPin) -> Self {
+        if !pin.is_ready() {
+            panic!("Pin not ready.");
         }
 
-        if !pin.is_ready() {
-            panic!("Pin aygıtı hazır değil.");
-        }
-        
         pin.configure(ZR_GPIO_OUTPUT);
 
-        let pin_instance = Pin {
+        Pin {
             _private: (),
             gpio: UnsafeCell::new(pin),
-        };
-
-        let pin_ptr = Box::into_raw(Box::new(pin_instance));
-
-        unsafe {
-            PIN_INSTANCE.store(pin_ptr, Ordering::Release);
-            IS_INITIALIZED.store(true, Ordering::Release);
-        }
-    }
-
-    #[inline(always)]
-    pub fn get() -> &'static Self {
-        if !IS_INITIALIZED.load(Ordering::Acquire) {
-            panic!("Pin başlatılmadı. `Pin::init()` çağrılmalı.");
-        }
-        
-        unsafe {
-            let pin_ptr = PIN_INSTANCE.load(Ordering::Relaxed);
-            &*pin_ptr
         }
     }
 
